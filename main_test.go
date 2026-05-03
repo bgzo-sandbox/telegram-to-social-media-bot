@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/go-telegram/bot/models"
+
+	"telegram-message-sync-bot/internal/Entity"
 )
 
 func TestBuildRootCommand_HasSyncAndMigrate(t *testing.T) {
@@ -109,5 +113,49 @@ func TestMigrateMoveLegacy_ConfigRequired(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "required flag") {
 		t.Fatalf("expected required flag error, got: %v", err)
+	}
+}
+
+func TestIsUpdateAuthorized_NoAuthorizedListAllowsAll(t *testing.T) {
+	config := Entity.Config{}
+	update := &models.Update{Message: &models.Message{From: &models.User{ID: 42}}}
+
+	if !isUpdateAuthorized(update, config) {
+		t.Fatalf("expected update to be allowed when authorizedUserList is empty")
+	}
+}
+
+func TestIsUpdateAuthorized_MessageSenderInAuthorizedList(t *testing.T) {
+	config := Entity.Config{AuthorizedUserList: []int64{42, 1001}}
+	update := &models.Update{Message: &models.Message{From: &models.User{ID: 42}}}
+
+	if !isUpdateAuthorized(update, config) {
+		t.Fatalf("expected authorized message sender to be allowed")
+	}
+}
+
+func TestIsUpdateAuthorized_MessageSenderNotInAuthorizedList(t *testing.T) {
+	config := Entity.Config{AuthorizedUserList: []int64{1001}}
+	update := &models.Update{Message: &models.Message{From: &models.User{ID: 42}}}
+
+	if isUpdateAuthorized(update, config) {
+		t.Fatalf("expected unauthorized message sender to be rejected")
+	}
+}
+
+func TestIsUpdateAuthorized_CallbackSenderInAuthorizedList(t *testing.T) {
+	config := Entity.Config{AuthorizedUserList: []int64{42}}
+	update := &models.Update{CallbackQuery: &models.CallbackQuery{From: models.User{ID: 42}}}
+
+	if !isUpdateAuthorized(update, config) {
+		t.Fatalf("expected authorized callback sender to be allowed")
+	}
+}
+
+func TestIsUpdateAuthorized_MissingSenderRejectedWhenWhitelistEnabled(t *testing.T) {
+	config := Entity.Config{AuthorizedUserList: []int64{42}}
+
+	if isUpdateAuthorized(&models.Update{}, config) {
+		t.Fatalf("expected update without sender to be rejected when authorizedUserList is enabled")
 	}
 }

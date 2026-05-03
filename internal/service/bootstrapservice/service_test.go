@@ -12,24 +12,25 @@ func TestLoadConfig_Success(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	content := `token: test-token
-output:
-  json: true
-  json_dir: /tmp/json
-  person_dir: /tmp/person
-  channel_dir: /tmp/channel
-log:
-  enable: true
-  dir: /tmp/log
-template:
-  dir: /tmp/template.txt
-targetUserList:
-  - 1001
-socialMediaSync:
-  enable: true
-  targetChannel:
-    - "imbGZo"
-`
+	content := "token: test-token\n" +
+		"output:\n" +
+		"  json: true\n" +
+		"  json_dir: /tmp/json\n" +
+		"  person_dir: /tmp/person\n" +
+		"  channel_dir: /tmp/channel\n" +
+		"log:\n" +
+		"  enable: true\n" +
+		"  dir: /tmp/log\n" +
+		"template:\n" +
+		"  dir: /tmp/template.txt\n" +
+		"targetUserList:\n" +
+		"  - 1001\n" +
+		"authorizedUserList:\n" +
+		"  - 1001\n" +
+		"socialMediaSync:\n" +
+		"  enable: true\n" +
+		"  targetChannel:\n" +
+		"    - \"imbGZo\"\n"
 
 	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
 		t.Fatalf("failed to write config: %v", err)
@@ -48,6 +49,9 @@ socialMediaSync:
 	}
 	if len(config.SocialMediaSync.TargetChannel) != 1 || config.SocialMediaSync.TargetChannel[0] != "imbGZo" {
 		t.Fatalf("unexpected target channels: %+v", config.SocialMediaSync.TargetChannel)
+	}
+	if len(config.AuthorizedUserList) != 1 || config.AuthorizedUserList[0] != 1001 {
+		t.Fatalf("unexpected authorized users: %+v", config.AuthorizedUserList)
 	}
 }
 

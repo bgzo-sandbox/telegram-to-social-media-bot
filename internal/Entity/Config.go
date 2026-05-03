@@ -21,7 +21,8 @@ type Config struct {
 
 	Token string `yaml:"token"`
 
-	TargetUserList []int64 `yaml:"targetUserList"`
+	TargetUserList     []int64 `yaml:"targetUserList"`
+	AuthorizedUserList []int64 `yaml:"authorizedUserList"`
 
 	Pipeline struct {
 		ExecutionMode string `yaml:"executionMode"`

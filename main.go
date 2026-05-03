@@ -24,21 +24,23 @@ import (
 // 全局配置
 var globalConfig Entity.Config
 
+const unauthorizedText = "Go fuck yourself!" //"无权限"
+
 // start 启动 Telegram Bot
 func start(botToken string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
 	opts := []bot.Option{
-		bot.WithDefaultHandler(defalutHandler),
-		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, Handler.Start),
-		bot.WithMessageTextHandler("/status", bot.MatchTypeExact, Handler.Version),
-		bot.WithMessageTextHandler("/admin", bot.MatchTypeExact, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		bot.WithDefaultHandler(requireAuthorization(defalutHandler)),
+		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, requireAuthorization(Handler.Start)),
+		bot.WithMessageTextHandler("/status", bot.MatchTypeExact, requireAuthorization(Handler.Version)),
+		bot.WithMessageTextHandler("/admin", bot.MatchTypeExact, requireAuthorization(func(ctx context.Context, b *bot.Bot, update *models.Update) {
 			Handler.AdminHome(ctx, b, update, globalConfig)
-		}),
-		bot.WithCallbackQueryDataHandler("admin:", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		})),
+		bot.WithCallbackQueryDataHandler("admin:", bot.MatchTypePrefix, requireAuthorization(func(ctx context.Context, b *bot.Bot, update *models.Update) {
 			Handler.AdminCallback(ctx, b, update, globalConfig)
-		}),
+		})),
 	}
 
 	b, err := bot.New(botToken, opts...)
@@ -86,6 +88,74 @@ func defalutHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: outbound.ChatID,
 			Text:   outbound.Text,
+		})
+	}
+}
+
+func requireAuthorization(next func(context.Context, *bot.Bot, *models.Update)) func(context.Context, *bot.Bot, *models.Update) {
+	return func(ctx context.Context, b *bot.Bot, update *models.Update) {
+		if isUpdateAuthorized(update, globalConfig) {
+			next(ctx, b, update)
+			return
+		}
+
+		respondUnauthorized(ctx, b, update)
+	}
+}
+
+func isUpdateAuthorized(update *models.Update, config Entity.Config) bool {
+	if len(config.AuthorizedUserList) == 0 {
+		return true
+	}
+
+	userID, ok := resolveActorID(update)
+	if !ok {
+		return false
+	}
+
+	for _, allowedID := range config.AuthorizedUserList {
+		if allowedID == userID {
+			return true
+		}
+	}
+
+	return false
+}
+
+func resolveActorID(update *models.Update) (int64, bool) {
+	if update == nil {
+		return 0, false
+	}
+
+	if update.Message != nil && update.Message.From != nil {
+		return update.Message.From.ID, true
+	}
+
+	if update.CallbackQuery != nil {
+		return update.CallbackQuery.From.ID, update.CallbackQuery.From.ID != 0
+	}
+
+	return 0, false
+}
+
+func respondUnauthorized(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update == nil {
+		return
+	}
+
+	if update.CallbackQuery != nil {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+			CallbackQueryID: update.CallbackQuery.ID,
+			Text:            unauthorizedText,
+			ShowAlert:       true,
+		})
+		return
+	}
+
+	if update.Message != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.Message.Chat.ID,
+			Text:   unauthorizedText,
 		})
 	}
 }

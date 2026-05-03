@@ -18,3 +18,5 @@ token: 588396:AAFCI0jtgaRWaU
 targetUserList:
   - 1234
 
+# 允许交互的用户；为空时允许所有人，配置后仅这些用户可收到机器人回复
+authorizedUserList:
