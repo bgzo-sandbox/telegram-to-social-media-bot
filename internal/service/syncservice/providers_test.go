@@ -292,10 +292,10 @@ func TestTwitterSender_TruncatesBeforeSend(t *testing.T) {
 		sendTwitterTextDetailed = originalTextDetailed
 	}()
 
-	longText := strings.Repeat("a", 120)
+	longText := strings.Repeat("a", 320)
 	sendTwitterTextDetailed = func(_ Entity.Config, message string) SocialMediaUtils.PublishResult {
-		if len(splitGraphemes(message)) != twitterTextLimit {
-			t.Fatalf("unexpected sent message length: %d", len(splitGraphemes(message)))
+		if twitterWeightedLength(message) != twitterTextLimit {
+			t.Fatalf("unexpected sent message length: %d", twitterWeightedLength(message))
 		}
 		if !strings.HasSuffix(message, truncateSuffix) {
 			t.Fatalf("expected truncated suffix, got: %s", message)

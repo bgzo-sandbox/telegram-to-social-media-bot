@@ -4,11 +4,12 @@ import (
 	"strings"
 
 	"github.com/rivo/uniseg"
+	"golang.org/x/text/width"
 )
 
 const (
-	twitterTextLimit  = 100
-	mastodonTextLimit = 300
+	twitterTextLimit  = 280
+	mastodonTextLimit = 500
 	blueSkyTextLimit  = 300
 	truncateSuffix    = "..."
 )
@@ -20,6 +21,10 @@ type PreparedText struct {
 
 func PreparePlatformText(platform string, text string) PreparedText {
 	normalized := normalizePlatformText(text)
+	if NormalizePlatform(platform) == "twitter" {
+		return prepareTwitterText(normalized)
+	}
+
 	limit := platformTextLimit(platform)
 	if limit <= 0 {
 		return PreparedText{Text: normalized}
@@ -38,6 +43,35 @@ func PreparePlatformText(platform string, text string) PreparedText {
 
 	return PreparedText{
 		Text:      strings.Join(append(graphemes[:bodyLimit], suffixGraphemes...), ""),
+		Truncated: true,
+	}
+}
+
+func prepareTwitterText(text string) PreparedText {
+	if twitterWeightedLength(text) <= twitterTextLimit {
+		return PreparedText{Text: text}
+	}
+
+	bodyLimit := twitterTextLimit - twitterWeightedLength(truncateSuffix)
+	if bodyLimit < 0 {
+		bodyLimit = 0
+	}
+
+	graphemes := splitGraphemes(text)
+	var builder strings.Builder
+	used := 0
+	for _, grapheme := range graphemes {
+		weight := twitterGraphemeWeight(grapheme)
+		if used+weight > bodyLimit {
+			break
+		}
+		builder.WriteString(grapheme)
+		used += weight
+	}
+	builder.WriteString(truncateSuffix)
+
+	return PreparedText{
+		Text:      builder.String(),
 		Truncated: true,
 	}
 }
@@ -68,4 +102,27 @@ func splitGraphemes(text string) []string {
 		parts = append(parts, iter.Str())
 	}
 	return parts
+}
+
+func twitterWeightedLength(text string) int {
+	total := 0
+	for _, grapheme := range splitGraphemes(text) {
+		total += twitterGraphemeWeight(grapheme)
+	}
+	return total
+}
+
+func twitterGraphemeWeight(grapheme string) int {
+	if grapheme == "" {
+		return 0
+	}
+
+	for _, r := range grapheme {
+		switch width.LookupRune(r).Kind() {
+		case width.EastAsianWide, width.EastAsianFullwidth:
+			return 2
+		}
+	}
+
+	return 1
 }
