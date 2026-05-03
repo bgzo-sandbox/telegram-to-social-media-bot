@@ -2,9 +2,9 @@ name: Build Release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "*" # 任何 tag 都会触发，比如 v1.0.0
+#  push:
+#    tags:
+#      - "*" # 任何 tag 都会触发，比如 v1.0.0
 
 jobs:
   build:
