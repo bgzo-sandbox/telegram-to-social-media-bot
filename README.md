@@ -138,8 +138,13 @@ pkill -f tg
 
 ### Optional: run in background using nohup
 
+Rename `tg-sync.service.bak` to `tg-sync.service`, then fill token.
+
 ```shell
-sudo vim /lib/systemd/system/tg@.service
+cp deploy/systemd/tg-sync.service  ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user start tg-sync.service
+systemctl --user enable tg-sync.service
 ```
 
 Add following config:

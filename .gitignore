@@ -2,7 +2,11 @@
 /archives/
 
 config/config.yaml
+# binary files
 tg
+# deployment files
+tg-sync.service
+
 dist/
 # References via: https://github.com/github/gitignore
 # Visual Studio Code
