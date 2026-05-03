@@ -1,17 +1,19 @@
 [Unit]
-Description=tg message sync bot for %i.
-After=network.target
+Description=tg message sync bot.
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=%i
 Restart=on-abort
-Environment=http_proxy=192.168.31.20:10800
-Environment=https_proxy=192.168.31.20:10800
+# Environment=http_proxy=192.168.31.20:10800
+# Environment=https_proxy=192.168.31.20:10800
 Environment=GOTWI_API_KEY=
 Environment=GOTWI_API_KEY_SECRET=
 ExecStart=/home/bgzo/workspaces/telegram-message-sync/tg sync -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
 
 [Install]
-# WantedBy=multi-user.target
-WantedBy=graphical-session.target
+WantedBy=default.target
