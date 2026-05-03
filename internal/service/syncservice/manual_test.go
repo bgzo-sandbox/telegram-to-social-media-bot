@@ -15,6 +15,7 @@ type manualFakeSender struct {
 	name   string
 	result DispatchResult
 	called bool
+	payload Payload
 }
 
 func (f *manualFakeSender) Name() string {
@@ -23,6 +24,7 @@ func (f *manualFakeSender) Name() string {
 
 func (f *manualFakeSender) Send(_ Entity.Config, payload Payload) DispatchResult {
 	f.called = true
+	f.payload = payload
 	f.result.ImageRequested = payload.Image != nil
 	f.result.UsedImage = payload.Image != nil && f.result.Success
 	if f.result.Platform == "" {
@@ -98,6 +100,9 @@ func TestManualResync_SinglePlatformAndPersistManualTrigger(t *testing.T) {
 	if !sender.called {
 		t.Fatalf("expected manual sender to be called")
 	}
+	if sender.payload.Text != "hello" {
+		t.Fatalf("expected manual payload text to be unescaped, got: %+v", sender.payload)
+	}
 
 	records, err := Database.ListSyncRecordsByMessage(archivedMessageID)
 	if err != nil {
@@ -117,5 +122,51 @@ func TestManualResync_UnknownPlatform(t *testing.T) {
 	_, err := ManualResync(config, archivedMessageID, "unknown")
 	if err == nil {
 		t.Fatalf("expected unknown platform error")
+	}
+}
+
+func TestManualResync_UnescapesHashtagsForSocialSync(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	if err := db.AutoMigrate(&Entity.Message{}, &Entity.Attachment{}, &Entity.SyncRecord{}); err != nil {
+		t.Fatalf("failed to migrate tables: %v", err)
+	}
+	Database.DB = db
+
+	archivedMessageID, err := Database.SaveMessage(&Entity.Message{
+		MessageID:   4002,
+		Username:    "imbGZo",
+		Content:     "hello \\#tag",
+		MessageUrl:  "https://t.me/imbGZo/4002",
+		MessageDate: time.Now(),
+		CreatedTime: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("failed to save message: %v", err)
+	}
+
+	sender := &manualFakeSender{name: "Twitter", result: DispatchResult{Success: true}}
+	originalFactory := manualDispatchFactory
+	manualDispatchFactory = func() []Sender {
+		return []Sender{sender}
+	}
+	defer func() {
+		manualDispatchFactory = originalFactory
+	}()
+
+	config := Entity.Config{}
+	config.SocialMediaSync.TargetChannel = []string{"imbGZo"}
+
+	result, err := ManualResync(config, archivedMessageID, "twitter")
+	if err != nil {
+		t.Fatalf("manual resync failed: %v", err)
+	}
+	if !result.Requested {
+		t.Fatalf("expected manual resync to be requested: %+v", result)
+	}
+	if sender.payload.Text != "hello #tag" {
+		t.Fatalf("expected unescaped hashtag text, got: %+v", sender.payload)
 	}
 }

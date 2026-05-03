@@ -133,6 +133,13 @@ func TestBuildPayload_NoImagePath(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_UnescapesHashtagsForSocialSync(t *testing.T) {
+	payload := BuildPayload("hello \\#tag", "")
+	if payload.Text != "hello #tag" {
+		t.Fatalf("unexpected payload text: %+v", payload)
+	}
+}
+
 func TestBuildPayload_MissingImagePathFallbackToTextOnly(t *testing.T) {
 	payload := BuildPayload("hello", "/tmp/not-found.jpg")
 	if payload.Text != "hello" {

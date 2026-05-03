@@ -6,6 +6,7 @@ import (
 	"telegram-message-sync-bot/internal/Database"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/pkg/LogUtils"
+	"telegram-message-sync-bot/pkg/StrUtils"
 	"time"
 )
 
@@ -42,7 +43,7 @@ const (
 )
 
 func BuildPayload(text string, imagePath string) Payload {
-	payload := Payload{Text: text}
+	payload := Payload{Text: StrUtils.UnescapeHashtags(text)}
 	if imagePath == "" {
 		return payload
 	}

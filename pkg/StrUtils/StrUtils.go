@@ -42,3 +42,7 @@ func SearchInFile(filePath, searchString string) bool {
 func EscapeHashtags(text string) string {
 	return strings.ReplaceAll(text, "#", "\\#")
 }
+
+func UnescapeHashtags(text string) string {
+	return strings.ReplaceAll(text, "\\#", "#")
+}
