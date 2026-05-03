@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"telegram-message-sync-bot/internal/Entity"
+	"time"
 
 	"github.com/michimani/gotwi/media/upload"
 	uploadTypes "github.com/michimani/gotwi/media/upload/types"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/michimani/gotwi"
 )
+
+const twitterHTTPTimeout = 90 * time.Second
 
 var newTwitterClient = func(config *gotwi.NewClientInput) (gotwi.IClient, error) {
 	return gotwi.NewClient(config)
@@ -44,6 +47,7 @@ func initTwitter(config Entity.Config) gotwi.NewClientInput {
 		AuthenticationMethod: gotwi.AuthenMethodOAuth1UserContext,
 		OAuthToken:           Twitter.OauthToken,
 		OAuthTokenSecret:     Twitter.OauthTokenSecret,
+		HTTPClient:           &http.Client{Timeout: twitterHTTPTimeout},
 	}
 }
 

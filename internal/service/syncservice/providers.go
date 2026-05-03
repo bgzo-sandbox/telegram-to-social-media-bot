@@ -1,6 +1,7 @@
 package syncservice
 
 import (
+	"fmt"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/pkg/SocialMediaUtils"
 )
@@ -32,9 +33,7 @@ func (blueSkySender) Send(config Entity.Config, payload Payload) DispatchResult 
 			return dispatchResultFromPublish("BlueSky", imageResult, true, true, prepared.Truncated)
 		}
 		textResult := sendBlueSkyTextDetailed(config, prepared.Text)
-		if !textResult.Success && textResult.ErrorMessage == "" {
-			textResult.ErrorMessage = imageResult.ErrorMessage
-		}
+		textResult.ErrorMessage = mergeImageFallbackError(textResult, imageResult)
 		return dispatchResultFromPublish("BlueSky", textResult, true, false, prepared.Truncated)
 	}
 	return dispatchResultFromPublish("BlueSky", sendBlueSkyTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
@@ -54,9 +53,7 @@ func (mastodonSender) Send(config Entity.Config, payload Payload) DispatchResult
 			return dispatchResultFromPublish("Mastodon", imageResult, true, true, prepared.Truncated)
 		}
 		textResult := sendMastodonTextDetailed(config, prepared.Text)
-		if !textResult.Success && textResult.ErrorMessage == "" {
-			textResult.ErrorMessage = imageResult.ErrorMessage
-		}
+		textResult.ErrorMessage = mergeImageFallbackError(textResult, imageResult)
 		return dispatchResultFromPublish("Mastodon", textResult, true, false, prepared.Truncated)
 	}
 	return dispatchResultFromPublish("Mastodon", sendMastodonTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
@@ -76,9 +73,7 @@ func (twitterSender) Send(config Entity.Config, payload Payload) DispatchResult 
 			return dispatchResultFromPublish("Twitter", imageResult, true, true, prepared.Truncated)
 		}
 		textResult := sendTwitterTextDetailed(config, prepared.Text)
-		if !textResult.Success && textResult.ErrorMessage == "" {
-			textResult.ErrorMessage = imageResult.ErrorMessage
-		}
+		textResult.ErrorMessage = mergeImageFallbackError(textResult, imageResult)
 		return dispatchResultFromPublish("Twitter", textResult, true, false, prepared.Truncated)
 	}
 	return dispatchResultFromPublish("Twitter", sendTwitterTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
@@ -103,4 +98,17 @@ func dispatchResultFromPublish(platform string, result SocialMediaUtils.PublishR
 		RemoteURL:      result.RemoteURL,
 		ErrorMessage:   result.ErrorMessage,
 	}
+}
+
+func mergeImageFallbackError(textResult SocialMediaUtils.PublishResult, imageResult SocialMediaUtils.PublishResult) string {
+	if imageResult.ErrorMessage == "" {
+		return textResult.ErrorMessage
+	}
+	if !textResult.Success {
+		if textResult.ErrorMessage != "" {
+			return textResult.ErrorMessage
+		}
+		return imageResult.ErrorMessage
+	}
+	return fmt.Sprintf("图片上传失败，已降级为纯文本: %s", imageResult.ErrorMessage)
 }

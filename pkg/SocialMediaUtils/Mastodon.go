@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"telegram-message-sync-bot/internal/Entity"
 
 	"github.com/mattn/go-mastodon"
@@ -72,7 +73,7 @@ func postMastodon(client mastodonClient, message string, imagePath string) Publi
 		attachment, err := client.UploadMedia(context.Background(), imagePath)
 		if err != nil {
 			log.Println(err)
-			return PublishResult{ErrorMessage: err.Error()}
+			return PublishResult{ErrorMessage: describeMastodonMediaUploadError(err)}
 		}
 		toot.MediaIDs = []mastodon.ID{attachment.ID}
 	}
@@ -85,4 +86,19 @@ func postMastodon(client mastodonClient, message string, imagePath string) Publi
 
 	fmt.Println("My new post is:", post)
 	return PublishResult{Success: true, RemoteID: string(post.ID), RemoteURL: post.URL}
+}
+
+func describeMastodonMediaUploadError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	message := err.Error()
+	lowerMessage := strings.ToLower(message)
+	if strings.Contains(lowerMessage, "outside the authorized scopes") ||
+		(strings.Contains(lowerMessage, "403") && strings.Contains(lowerMessage, "forbidden")) {
+		return "Mastodon 图片上传被拒绝，当前 AccessToken 缺少媒体上传权限 scope（通常需要 write:media）"
+	}
+
+	return message
 }

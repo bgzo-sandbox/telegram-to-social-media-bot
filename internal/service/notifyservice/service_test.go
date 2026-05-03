@@ -46,7 +46,7 @@ func TestBuildSyncNotifications(t *testing.T) {
 
 	results := []syncservice.DispatchResult{
 		{Platform: "BlueSky", Success: true, ImageRequested: true, UsedImage: true, Truncated: true},
-		{Platform: "Mastodon", Success: true, ImageRequested: true, UsedImage: false},
+		{Platform: "Mastodon", Success: true, ImageRequested: true, UsedImage: false, ErrorMessage: "图片上传失败，已降级为纯文本: scope missing"},
 		{Platform: "Twitter", Success: false, ImageRequested: true, ErrorMessage: "too long"},
 	}
 	whenEnabled := BuildSyncNotifications(true, "", results)
@@ -56,7 +56,7 @@ func TestBuildSyncNotifications(t *testing.T) {
 	if whenEnabled[0] != "消息已同步至 BlueSky，并附带图片，文本已截断!" {
 		t.Fatalf("unexpected first notification: %s", whenEnabled[0])
 	}
-	if whenEnabled[1] != "消息已同步至 Mastodon，但图片已跳过" {
+	if whenEnabled[1] != "消息已同步至 Mastodon，但图片已跳过: 图片上传失败，已降级为纯文本: scope missing" {
 		t.Fatalf("unexpected second notification: %s", whenEnabled[1])
 	}
 	if whenEnabled[2] != "同步 Twitter 失败: too long" {

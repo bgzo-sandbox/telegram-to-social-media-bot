@@ -165,3 +165,23 @@ func TestBuildPayload_KeepSingleExistingImage(t *testing.T) {
 		t.Fatalf("unexpected payload image: %+v", payload)
 	}
 }
+
+func TestResolvePayloadImagePath_FindsRelativeChannelAsset(t *testing.T) {
+	root := t.TempDir()
+	channelDir := filepath.Join(root, "channel")
+	imagePath := filepath.Join(channelDir, "assets", "imbGZo", "single.jpg")
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("failed to create image dir: %v", err)
+	}
+	if err := os.WriteFile(imagePath, []byte("test"), 0o644); err != nil {
+		t.Fatalf("failed to create test image: %v", err)
+	}
+
+	config := Entity.Config{}
+	config.Output.ChannelDir = channelDir
+
+	resolved := ResolvePayloadImagePath(config, filepath.Join("assets", "imbGZo", "single.jpg"))
+	if resolved != imagePath {
+		t.Fatalf("unexpected resolved image path: %s", resolved)
+	}
+}

@@ -79,6 +79,31 @@ func TestSendTwitterWithImage_UploadAndAttachMedia(t *testing.T) {
 	}
 }
 
+func TestSendTwitterWithImage_ConfiguresLongerHTTPTimeout(t *testing.T) {
+	originalNewClient := newTwitterClient
+	defer func() {
+		newTwitterClient = originalNewClient
+	}()
+
+	newTwitterClient = func(in *gotwi.NewClientInput) (gotwi.IClient, error) {
+		if in.HTTPClient == nil {
+			t.Fatalf("expected configured http client")
+		}
+		if in.HTTPClient.Timeout != twitterHTTPTimeout {
+			t.Fatalf("unexpected twitter timeout: %v", in.HTTPClient.Timeout)
+		}
+		return gotwi.NewMockGotwiClientWithFunc(gotwi.MockFuncInput{}), nil
+	}
+
+	config := Entity.Config{}
+	config.SocialMediaSync.Twitter.Enable = true
+
+	result := SendTwitterDetailed(config, "hello")
+	if !result.Success {
+		t.Fatalf("expected SendTwitterDetailed success")
+	}
+}
+
 func TestSendTwitterWithImage_ReturnFalseWhenUploadFails(t *testing.T) {
 	originalNewClient := newTwitterClient
 	originalInitialize := twitterUploadInitialize

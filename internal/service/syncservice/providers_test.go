@@ -284,6 +284,33 @@ func TestBlueSkySender_FallsBackToTextWhenImageSendFails(t *testing.T) {
 	if result.RemoteID == "" {
 		t.Fatalf("expected fallback result to keep remote id: %+v", result)
 	}
+	if result.ErrorMessage != "图片上传失败，已降级为纯文本: upload failed" {
+		t.Fatalf("expected fallback image error to be preserved: %+v", result)
+	}
+}
+
+func TestMastodonSender_FallbackKeepsImageErrorWhenTextSucceeds(t *testing.T) {
+	originalTextDetailed := sendMastodonTextDetailed
+	originalImageDetailed := sendMastodonImageDetailed
+	defer func() {
+		sendMastodonTextDetailed = originalTextDetailed
+		sendMastodonImageDetailed = originalImageDetailed
+	}()
+
+	sendMastodonTextDetailed = func(_ Entity.Config, _ string) SocialMediaUtils.PublishResult {
+		return SocialMediaUtils.PublishResult{Success: true, RemoteID: "mastodon-fallback"}
+	}
+	sendMastodonImageDetailed = func(_ Entity.Config, _ string, _ string) SocialMediaUtils.PublishResult {
+		return SocialMediaUtils.PublishResult{Success: false, ErrorMessage: "scope missing"}
+	}
+
+	result := mastodonSender{}.Send(Entity.Config{}, Payload{Text: "hello", Image: &ImagePayload{FilePath: "/tmp/test.jpg"}})
+	if !result.Success || !result.ImageRequested || result.UsedImage {
+		t.Fatalf("expected text fallback result, got: %+v", result)
+	}
+	if result.ErrorMessage != "图片上传失败，已降级为纯文本: scope missing" {
+		t.Fatalf("expected fallback image error to be preserved: %+v", result)
+	}
 }
 
 func TestTwitterSender_TruncatesBeforeSend(t *testing.T) {

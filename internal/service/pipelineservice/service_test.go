@@ -284,6 +284,49 @@ func TestDefaultSyncStage_BuildPayloadWithImagePath(t *testing.T) {
 	}
 }
 
+func TestDefaultSyncStage_ResolvesRelativeImagePathFromChannelAssets(t *testing.T) {
+	sender := &captureSender{}
+	originalFactory := defaultSendersFactory
+	defaultSendersFactory = func() []syncservice.Sender {
+		return []syncservice.Sender{sender}
+	}
+	defer func() {
+		defaultSendersFactory = originalFactory
+	}()
+
+	root := t.TempDir()
+	channelDir := filepath.Join(root, "channel")
+	absImagePath := filepath.Join(channelDir, "assets", "imbGZo", "test.jpg")
+	if err := os.MkdirAll(filepath.Dir(absImagePath), 0o755); err != nil {
+		t.Fatalf("failed to create image dir: %v", err)
+	}
+	if err := os.WriteFile(absImagePath, []byte("img"), 0o644); err != nil {
+		t.Fatalf("failed to create test image: %v", err)
+	}
+
+	config := Entity.Config{}
+	config.Output.ChannelDir = channelDir
+	config.SocialMediaSync.Enable = true
+	config.SocialMediaSync.TargetChannel = []string{"imbGZo"}
+
+	stage := defaultSyncStage{}
+	enabled, reason, results := stage.Run(config, archiveservice.PersistResult{
+		SourceID:  "imbGZo",
+		MsgText:   "content",
+		ImagePath: filepath.Join("assets", "imbGZo", "test.jpg"),
+	})
+
+	if !enabled {
+		t.Fatalf("expected sync enabled, got reason: %s", reason)
+	}
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("unexpected dispatch results: %+v", results)
+	}
+	if sender.payload.Image == nil || sender.payload.Image.FilePath != absImagePath {
+		t.Fatalf("unexpected payload image: %+v", sender.payload)
+	}
+}
+
 func TestDefaultSyncStage_PersistDispatchResults(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

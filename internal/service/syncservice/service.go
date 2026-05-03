@@ -3,6 +3,7 @@ package syncservice
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"telegram-message-sync-bot/internal/Database"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/pkg/LogUtils"
@@ -54,6 +55,32 @@ func BuildPayload(text string, imagePath string) Payload {
 
 	payload.Image = &ImagePayload{FilePath: imagePath}
 	return payload
+}
+
+func ResolvePayloadImagePath(config Entity.Config, imagePath string) string {
+	if imagePath == "" {
+		return ""
+	}
+
+	if _, err := os.Stat(imagePath); err == nil {
+		return imagePath
+	}
+
+	if filepath.IsAbs(imagePath) {
+		return ""
+	}
+
+	candidates := []string{
+		filepath.Join(config.Output.ChannelDir, imagePath),
+		filepath.Join(config.Output.PersonDir, imagePath),
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+
+	return ""
 }
 
 // ShouldSync 根据配置和来源ID判定当前消息是否应进入社媒同步。

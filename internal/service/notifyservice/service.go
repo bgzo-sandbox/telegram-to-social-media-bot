@@ -48,6 +48,10 @@ func BuildSyncNotifications(syncEnabled bool, syncReason string, results []syncs
 				continue
 			}
 			if result.ImageRequested && !result.UsedImage {
+				if result.ErrorMessage != "" {
+					notifications = append(notifications, fmt.Sprintf("消息已同步至 %s，但图片已跳过%s: %s", result.Platform, suffix, result.ErrorMessage))
+					continue
+				}
 				notifications = append(notifications, fmt.Sprintf("消息已同步至 %s，但图片已跳过%s", result.Platform, suffix))
 				continue
 			}

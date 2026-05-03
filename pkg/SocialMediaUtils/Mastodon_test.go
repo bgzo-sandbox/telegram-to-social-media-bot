@@ -85,3 +85,25 @@ func TestSendMastodonWithImage_ReturnFalseWhenUploadFails(t *testing.T) {
 		t.Fatalf("expected post not to be attempted when upload fails")
 	}
 }
+
+func TestSendMastodonWithImage_ExplainsMissingMediaScope(t *testing.T) {
+	client := &fakeMastodonClient{uploadErr: fmt.Errorf("403 Forbidden: This action is outside the authorized scopes")}
+	originalFactory := newMastodonClient
+	newMastodonClient = func(_ *mastodon.Config) mastodonClient {
+		return client
+	}
+	defer func() {
+		newMastodonClient = originalFactory
+	}()
+
+	config := Entity.Config{}
+	config.SocialMediaSync.Mastodon.Enable = true
+
+	result := SendMastodonWithImageDetailed(config, "hello", "/tmp/test.jpg")
+	if result.Success {
+		t.Fatalf("expected SendMastodonWithImageDetailed failure when upload fails")
+	}
+	if result.ErrorMessage != "Mastodon 图片上传被拒绝，当前 AccessToken 缺少媒体上传权限 scope（通常需要 write:media）" {
+		t.Fatalf("unexpected error message: %s", result.ErrorMessage)
+	}
+}

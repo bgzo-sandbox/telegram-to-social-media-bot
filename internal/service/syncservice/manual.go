@@ -64,7 +64,7 @@ func ManualResync(config Entity.Config, archivedMessageID int64, platform string
 	}
 	defer manualDispatchGuard.Release(guardKey)
 
-	imagePath := firstImagePath(msg.Attachments)
+	imagePath := ResolvePayloadImagePath(config, firstImagePath(msg.Attachments))
 	payload := BuildPayload(msg.Content, imagePath)
 	results := Dispatch(config, payload, senders)
 	if err := PersistDispatchResults(archivedMessageID, results, DispatchTriggerManual); err != nil {

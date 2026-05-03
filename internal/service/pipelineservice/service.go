@@ -67,7 +67,7 @@ func (defaultSyncStage) Run(config Entity.Config, persistResult archiveservice.P
 	syncEnabled, syncReason := syncservice.ShouldSync(config, persistResult.SourceID)
 	results := make([]syncservice.DispatchResult, 0)
 	if syncEnabled {
-		payload := syncservice.BuildPayload(persistResult.MsgText, persistResult.ImagePath)
+		payload := syncservice.BuildPayload(persistResult.MsgText, syncservice.ResolvePayloadImagePath(config, persistResult.ImagePath))
 		results = syncservice.Dispatch(config, payload, defaultSendersFactory())
 		if err := syncservice.PersistDispatchResults(persistResult.ArchivedMessageID, results, syncservice.DispatchTriggerAutomatic); err != nil {
 			LogUtils.GetLogger().Printf("persist sync records failed: %v\n", err)
