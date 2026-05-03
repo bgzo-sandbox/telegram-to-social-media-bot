@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"regexp"
+	"strings"
 	"telegram-message-sync-bot/internal/Entity"
 	"time"
 
@@ -18,6 +20,8 @@ const blueSkyImageMaxBytes = 1000000
 var blueSkyCreateSession = server.CreateSession
 var blueSkyCreateRecord = repo.CreateRecord
 var blueSkyHTTPClient = http.DefaultClient
+
+var blueSkyURLRegexp = regexp.MustCompile(`https?://[^\s]+`)
 
 func initBlueSky(config Entity.Config) (username string, password string) {
 	BlueSky := config.SocialMediaSync.BlueSky
@@ -87,6 +91,9 @@ func buildBlueSkyPost(message string, imagePath string, bearerToken string) (map
 		"text":      message,
 		"createdAt": when,
 	}
+	if facets := buildBlueSkyLinkFacets(message); len(facets) > 0 {
+		post["facets"] = facets
+	}
 
 	if imagePath == "" {
 		return post, nil
@@ -147,4 +154,70 @@ func uploadBlueSkyBlob(imagePath string, bearerToken string) (map[string]any, er
 	}
 
 	return payload.Blob, nil
+}
+
+func buildBlueSkyLinkFacets(message string) []map[string]any {
+	matches := blueSkyURLRegexp.FindAllStringIndex(message, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	facets := make([]map[string]any, 0, len(matches))
+	for _, match := range matches {
+		start := match[0]
+		end := trimBlueSkyLinkEnd(message, match[1])
+		if end <= start {
+			continue
+		}
+		uri := message[start:end]
+		facets = append(facets, map[string]any{
+			"index": map[string]any{
+				"byteStart": start,
+				"byteEnd":   end,
+			},
+			"features": []map[string]any{
+				{
+					"$type": "app.bsky.richtext.facet#link",
+					"uri":   uri,
+				},
+			},
+		})
+	}
+
+	if len(facets) == 0 {
+		return nil
+	}
+
+	return facets
+}
+
+func trimBlueSkyLinkEnd(message string, end int) int {
+	for end > 0 {
+		r, size := lastRuneBefore(message[:end])
+		if size == 0 {
+			return end
+		}
+		if !strings.ContainsRune(").,!?:;)]}'\"", r) {
+			return end
+		}
+		end -= size
+	}
+	return end
+}
+
+func lastRuneBefore(text string) (rune, int) {
+	for i := len(text); i > 0; {
+		r := rune(text[i-1])
+		if r < 0x80 {
+			return r, 1
+		}
+		break
+	}
+
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return 0, 0
+	}
+	last := runes[len(runes)-1]
+	return last, len(string(last))
 }

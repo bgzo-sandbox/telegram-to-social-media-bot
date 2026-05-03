@@ -77,3 +77,50 @@ func TestBuildBlueSkyPost_ReturnErrorWhenUploadFails(t *testing.T) {
 		t.Fatalf("expected buildBlueSkyPost failure when upload fails")
 	}
 }
+
+func TestBuildBlueSkyPost_AddsLinkFacets(t *testing.T) {
+	message := "read this https://example.com/path?x=1 and this https://bsky.app/profile/test"
+
+	post, err := buildBlueSkyPost(message, "", "token")
+	if err != nil {
+		t.Fatalf("expected buildBlueSkyPost success, got: %v", err)
+	}
+
+	facets, ok := post["facets"].([]map[string]any)
+	if !ok {
+		t.Fatalf("expected facets slice, got: %#v", post["facets"])
+	}
+	if len(facets) != 2 {
+		t.Fatalf("expected 2 facets, got: %d", len(facets))
+	}
+
+	firstIndex, ok := facets[0]["index"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first facet index, got: %#v", facets[0]["index"])
+	}
+	firstFeatures, ok := facets[0]["features"].([]map[string]any)
+	if !ok || len(firstFeatures) != 1 {
+		t.Fatalf("expected first facet features, got: %#v", facets[0]["features"])
+	}
+	if firstFeatures[0]["uri"] != "https://example.com/path?x=1" {
+		t.Fatalf("unexpected first facet uri: %#v", firstFeatures[0]["uri"])
+	}
+	if firstIndex["byteStart"] != strings.Index(message, "https://example.com/path?x=1") {
+		t.Fatalf("unexpected first facet start: %#v", firstIndex)
+	}
+}
+
+func TestBuildBlueSkyPost_TrimsTrailingPunctuationFromLinkFacet(t *testing.T) {
+	message := "see https://example.com/test."
+
+	post, err := buildBlueSkyPost(message, "", "token")
+	if err != nil {
+		t.Fatalf("expected buildBlueSkyPost success, got: %v", err)
+	}
+
+	facets := post["facets"].([]map[string]any)
+	features := facets[0]["features"].([]map[string]any)
+	if features[0]["uri"] != "https://example.com/test" {
+		t.Fatalf("unexpected facet uri: %#v", features[0]["uri"])
+	}
+}
