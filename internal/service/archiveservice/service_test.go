@@ -325,3 +325,20 @@ func TestIsMessageArchived_ReturnsFalseWhenNotFound(t *testing.T) {
 		t.Fatalf("expected not archived when neither new nor legacy paths contain source link")
 	}
 }
+
+func TestBuildPersistedAttachmentFileName_UsesFileUniqueID(t *testing.T) {
+	got := buildPersistedAttachmentFileName("AQADyxBrG0vZEVd-", "photos/image.jpg")
+	if got != "AQADyxBrG0vZEVd-" {
+		t.Fatalf("expected file_unique_id to be used as file name, got: %s", got)
+	}
+}
+
+func TestBuildPersistedAttachmentFileName_FallsBackWhenUniqueIDInvalid(t *testing.T) {
+	got := buildPersistedAttachmentFileName("../", "photos/image.jpg")
+	if !strings.HasSuffix(got, ".jpg") {
+		t.Fatalf("expected fallback file name to keep extension, got: %s", got)
+	}
+	if strings.Contains(got, "/") {
+		t.Fatalf("expected fallback file name to be sanitized, got: %s", got)
+	}
+}

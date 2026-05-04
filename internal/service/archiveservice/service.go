@@ -65,7 +65,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 	if photos := extractPhotos(update); len(photos) > 0 {
 		var files []string
 		highestResolutionPhoto := photos[len(photos)-1]
-		file := persistFile(ctx, b, highestResolutionPhoto.FileID, meta.SourceID, meta.ArchiveRoot, Entity.ImageMessage)
+		file := persistFile(ctx, b, highestResolutionPhoto.FileID, highestResolutionPhoto.FileUniqueID, meta.SourceID, meta.ArchiveRoot, Entity.ImageMessage)
 		if file != nil {
 			files = append(files, file.FilePath)
 			assets = append(assets, *file)
@@ -391,7 +391,7 @@ func formatDownloadedFiles(files []string) string {
 
 // persistFile 下载并保存 Telegram 媒体文件，返回可入库的附件元数据。
 // 这样做的原因是把媒体 I/O 细节封装在单点，减少归档主流程的噪音与耦合。
-func persistFile(ctx context.Context, b *bot.Bot, fileID string, dirname string, outputPath string, messageType Entity.MessageType) *Entity.Attachment {
+func persistFile(ctx context.Context, b *bot.Bot, fileID string, fileUniqueID string, dirname string, outputPath string, messageType Entity.MessageType) *Entity.Attachment {
 	params := bot.GetFileParams{FileID: fileID}
 	file, err := b.GetFile(ctx, &params)
 	if err != nil {
@@ -401,24 +401,18 @@ func persistFile(ctx context.Context, b *bot.Bot, fileID string, dirname string,
 
 	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", b.Token(), file.FilePath)
 
-	ext := filepath.Ext(file.FilePath)
-	if ext == "" {
-		ext = ".dat"
-	}
-
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		LogUtils.GetLogger().Printf("下载文件失败: %v\n", err)
 		return nil
 	}
 
-	timestamp := time.Now().Format("20060102_150405") + fmt.Sprintf("_%d", time.Now().UnixNano()%1e6)
-	fileName := fmt.Sprintf("%s%s", timestamp, ext)
+	fileName := buildPersistedAttachmentFileName(fileUniqueID, file.FilePath)
 	fullOutputDir := filepath.Join(outputPath, "assets", dirname)
 	fullOutputFilename := filepath.Join(fullOutputDir, fileName)
 	relatedPath := filepath.Join("assets", dirname, fileName)
 
-	FileUtils.OutputResponse(fullOutputDir, fmt.Sprintf("%s%s", timestamp, ext), resp)
+	FileUtils.OutputResponse(fullOutputDir, fileName, resp)
 
 	size, err := FileUtils.GetFileSize(fullOutputFilename)
 	if err != nil {
@@ -431,4 +425,29 @@ func persistFile(ctx context.Context, b *bot.Bot, fileID string, dirname string,
 		FileSize: size,
 		Type:     messageType,
 	}
+}
+
+func buildPersistedAttachmentFileName(fileUniqueID string, remotePath string) string {
+	name := sanitizeRenderedArchiveFileName(fileUniqueID)
+	if containsLetterOrNumber(name) {
+		return name
+	}
+
+	// failure fallback to timestamp-based name if unique ID is not usable as filename
+	ext := filepath.Ext(remotePath)
+	if ext == "" {
+		ext = ".dat"
+	}
+
+	timestamp := time.Now().Format("20060102_150405") + fmt.Sprintf("_%d", time.Now().UnixNano()%1e6)
+	return fmt.Sprintf("%s%s", timestamp, ext)
+}
+
+func containsLetterOrNumber(value string) bool {
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return true
+		}
+	}
+	return false
 }
