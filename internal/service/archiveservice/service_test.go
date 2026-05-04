@@ -124,6 +124,26 @@ func TestSelectMsgText_FallbackToCaption(t *testing.T) {
 	}
 }
 
+func TestExtractPhotos_ReturnsForwardedUserPhotos(t *testing.T) {
+	update := &models.Update{
+		Message: &models.Message{
+			ForwardOrigin: &models.MessageOrigin{Type: "user"},
+			Photo: []models.PhotoSize{
+				{FileID: "small"},
+				{FileID: "large"},
+			},
+		},
+	}
+
+	photos := extractPhotos(update)
+	if len(photos) != 2 {
+		t.Fatalf("expected 2 photos, got: %d", len(photos))
+	}
+	if photos[len(photos)-1].FileID != "large" {
+		t.Fatalf("expected highest resolution photo to remain available, got: %s", photos[len(photos)-1].FileID)
+	}
+}
+
 func TestBuildTemplateData_ContainsExpectedKeys(t *testing.T) {
 	meta := SourceMeta{
 		SourceID:   "imbGZo",

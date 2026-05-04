@@ -62,19 +62,16 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 		return PersistResult{OK: false, Message: "消息已存在", SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ArchivedMessageID: existingArchivedMessageID}
 	}
 
-	if update.Message.ForwardOrigin != nil && update.Message.ForwardOrigin.Type == "channel" {
+	if photos := extractPhotos(update); len(photos) > 0 {
 		var files []string
-		photos := update.Message.Photo
-		if len(photos) > 0 {
-			highestResolutionPhoto := photos[len(photos)-1]
-			file := persistFile(ctx, b, highestResolutionPhoto.FileID, meta.SourceID, meta.ArchiveRoot, Entity.ImageMessage)
-			if file != nil {
-				files = append(files, file.FilePath)
-				assets = append(assets, *file)
-				imagePath = file.FilePath
-			}
-			photoLink = formatDownloadedFiles(files)
+		highestResolutionPhoto := photos[len(photos)-1]
+		file := persistFile(ctx, b, highestResolutionPhoto.FileID, meta.SourceID, meta.ArchiveRoot, Entity.ImageMessage)
+		if file != nil {
+			files = append(files, file.FilePath)
+			assets = append(assets, *file)
+			imagePath = file.FilePath
 		}
+		photoLink = formatDownloadedFiles(files)
 	}
 
 	logCommandline := fmt.Sprintf("ChatID: %d, Channel: %s, Message: %s",
@@ -257,6 +254,14 @@ func SelectMsgText(update *models.Update) string {
 		msgEntities = update.Message.CaptionEntities
 	}
 	return StrUtils.EscapeHashtags(TgUtils.HandleMsgLink(msgText, msgEntities))
+}
+
+func extractPhotos(update *models.Update) []models.PhotoSize {
+	if update == nil || update.Message == nil {
+		return nil
+	}
+
+	return update.Message.Photo
 }
 
 // BuildTemplateData 生成归档模板渲染字段，统一标题规则、时间格式和兼容别名。
