@@ -1,0 +1,33 @@
+{
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SyncBot",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.go",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "args": "sync -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml"
+    },
+    {
+      "name": "Migrate:JSON to DB",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.go",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "args": "migrate json-to-db -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml"
+    },
+    {
+      "name": "Migrate:Db to Markdown",
+      "type": "go",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.go",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "args": "migrate backfill -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml"
+    }
+  ]
+}
