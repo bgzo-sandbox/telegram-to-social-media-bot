@@ -194,6 +194,49 @@ func TestBackfillFromDatabase_CustomFileNameTemplate(t *testing.T) {
 	assertFileContains(t, personFile, "title: hello person")
 }
 
+func TestBackfillFromDatabase_ReusesExistingSourceDirectoryCase(t *testing.T) {
+	tmp := t.TempDir()
+	personDir := filepath.Join(tmp, "person")
+	channelDir := filepath.Join(tmp, "channel")
+	templatePath := filepath.Join(tmp, "template.txt")
+
+	if err := os.WriteFile(templatePath, []byte("{{.content}}"), 0o644); err != nil {
+		t.Fatalf("failed to write template: %v", err)
+	}
+
+	setupInMemoryDB(t)
+
+	now := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC)
+	msg := Entity.Message{MessageID: 505, Username: "GfWR16", MessageUrl: "https://t.me/GfWR16/505", Content: "mixed case", MessageDate: now, CreatedTime: now}
+	if _, err := Database.SaveMessage(&msg); err != nil {
+		t.Fatalf("failed to seed message: %v", err)
+	}
+
+	existingDir := filepath.Join(channelDir, "GfWR16")
+	if err := os.MkdirAll(existingDir, 0o755); err != nil {
+		t.Fatalf("failed to create existing source dir: %v", err)
+	}
+
+	var cfg Entity.Config
+	cfg.Output.PersonDir = personDir
+	cfg.Output.ChannelDir = channelDir
+	cfg.Template.Dir = templatePath
+
+	stats, err := BackfillFromDatabase(cfg)
+	if err != nil {
+		t.Fatalf("backfill failed: %v", err)
+	}
+	if stats.OrphanInArchive != 0 || stats.MissingFromArchive != 0 {
+		t.Fatalf("expected verify to pass, got stats: %+v", stats)
+	}
+	if _, err := os.Stat(filepath.Join(existingDir, "505.md")); err != nil {
+		t.Fatalf("expected file in existing mixed-case dir, got err: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(channelDir, "gfwr16", "505.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected no lowercase duplicate dir, got err: %v", err)
+	}
+}
+
 func setupInMemoryDB(t *testing.T) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

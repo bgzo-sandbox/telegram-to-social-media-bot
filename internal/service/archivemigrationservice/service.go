@@ -59,7 +59,11 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 	for _, msg := range msgs {
 		sourceID := normalizeSourceID(msg.Username)
 		archiveRoot := resolveArchiveRoot(config, msg)
-		outputDir := filepath.Join(archiveRoot, sourceID)
+		sourceDirName, err := resolveArchiveSourceDirName(archiveRoot, sourceID)
+		if err != nil {
+			return stats, err
+		}
+		outputDir := filepath.Join(archiveRoot, sourceDirName)
 		fileName := archiveservice.ResolveArchiveFileName(config, archiveservice.SourceMeta{
 			SourceLink: msg.MessageUrl,
 			SourceDate: msg.MessageDate,
@@ -68,7 +72,7 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 		}, msg.Content)
 		fullPath := filepath.Join(outputDir, fileName)
 
-		expectedPaths[filepath.Clean(fullPath)] = struct{}{}
+		expectedPaths[canonicalArchiveFileKey(archiveRoot, sourceDirName, fileName)] = struct{}{}
 
 		if _, statErr := os.Stat(fullPath); statErr == nil {
 			stats.FilesSkipped++
@@ -143,6 +147,31 @@ func normalizeSourceID(sourceID string) string {
 	return strings.ToLower(strings.TrimSpace(sourceID))
 }
 
+func resolveArchiveSourceDirName(archiveRoot string, sourceID string) (string, error) {
+	entries, err := os.ReadDir(archiveRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return sourceID, nil
+		}
+		return "", fmt.Errorf("读取归档目录失败: %w", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if strings.EqualFold(entry.Name(), sourceID) {
+			return entry.Name(), nil
+		}
+	}
+
+	return sourceID, nil
+}
+
+func canonicalArchiveFileKey(base string, sourceDirName string, fileName string) string {
+	return filepath.Clean(filepath.Join(base, strings.ToLower(sourceDirName), fileName))
+}
+
 func renderAttachmentMarkdown(assets []Entity.Attachment) string {
 	if len(assets) == 0 {
 		return ""
@@ -191,7 +220,7 @@ func collectArchiveFilePaths(config Entity.Config) (map[string]struct{}, error) 
 					continue
 				}
 
-				paths[filepath.Clean(filepath.Join(base, sourceDir.Name(), f.Name()))] = struct{}{}
+				paths[canonicalArchiveFileKey(base, sourceDir.Name(), f.Name())] = struct{}{}
 			}
 		}
 	}
