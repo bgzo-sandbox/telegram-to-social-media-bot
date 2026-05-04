@@ -1,7 +1,7 @@
 ---
 title: 项目设计
 created: 2026-04-30T00:00:00
-modified: 2026-05-04T00:00:00
+modified: 2026-05-04T14:30:00
 description: 给后续 LLM 提供「可执行、可验证、可迭代」的上下文。先做最小可用版本（MVP），不要过度设计；所有章节都要能直接映射为任务。。
 tags:
   - ai-notes
@@ -30,9 +30,12 @@ tags:
 ### 归档
 
 - 每条消息单独存档。
-- 存档路径固定为 `archives/<bucket>/<source_id>/<message_id>.md`。
+- 存档路径固定为 `archives/<bucket>/<source_id>/<file_name>`。
 - `bucket` 只允许 `channel` 或 `person`。
 - `source_id` 优先使用频道 username；没有时使用 chat id；统一小写。
+- `file_name` 默认回退为 `message_id.md`，也允许通过 `template.file_name_template` 自定义。
+- `title` 不来自 Telegram 原生字段，当前固定取正文归一化后的前 20 个字符；为空时回退到 `message_id`。
+- Markdown 完整内容由 `config/template.txt` 统一输出，front matter 不再在服务里硬编码拼接。
 - 重复消息优先依赖数据库唯一约束判断。
 
 ### 同步
@@ -92,7 +95,9 @@ tags:
 ## 归档最小规范
 
 - Markdown 文件必须带 YAML front matter。
-- 文件路径中的 `bucket`、`source_id`、`message_id` 必须和文件内容一致。
+- 文件路径中的 `bucket`、`source_id` 必须和文件内容一致。
+- 文件名允许模板化，但必须能由同一条消息稳定复现。
+- 默认文件名模板是 `{{.id}}-{{.title-filename-truncated}}.md`；未配置时回退到 `message_id.md`。
 - 每条消息的稳定键是 `(chat_id, message_id)`。
 - `source_id` 超过 128 个字符时直接报错，并进入通知流程。
 

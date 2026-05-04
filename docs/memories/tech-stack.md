@@ -1,7 +1,7 @@
 ---
 title: 技术栈选择与规范
 created: 2026-04-30T00:00:00
-modified: 2026-04-30T00:00:00
+modified: 2026-05-04T14:30:00
 description: 保证项目使用最简单、最健壮的技术栈，实施过程中可以依据实际情况引入更多元的技术栈，但必须保证最终文件落地到项目中，保证日后可追溯 (严格禁止在 /tmp 目录黑箱操作)。
 tags:
   - ai-notes
@@ -44,6 +44,7 @@ tags:
 - `output.person_dir` 和 `output.channel_dir`：归档目录。
 - `log.dir`：日志目录，也是 SQLite 基准目录。
 - `template.dir`：Markdown 模板路径。
+- `template.file_name_template`：归档文件名模板，支持 `{{.id}}` 和 `{{.title-filename-truncated}}`。
 - `targetUserList`：通知目标用户。
 - `socialMediaSync.enable`：同步总开关。
 - `socialMediaSync.targetChannel`：允许同步的频道名单。
@@ -56,6 +57,7 @@ tags:
 - 保持模块化，避免把归档、同步、通知重新揉回 `main.go`。
 - 公共实体统一放在 `internal/Entity`。
 - 去重优先依赖数据库唯一约束。
+- 归档模板字段与文件名模板字段都由 `archiveservice` 统一提供，不允许在调用方重复拼装。
 - 新平台只能走适配层扩展。
 - 默认串行，异步只能渐进演进，不能直接替换现有语义。
 - 有行为变化时必须补测试。
