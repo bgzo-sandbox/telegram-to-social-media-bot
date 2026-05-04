@@ -39,6 +39,26 @@ func TestResolveSourceMeta_DefaultPrivateMessage(t *testing.T) {
 	}
 }
 
+func TestResolveSourceMeta_PrivateMessageUsesMessageDate(t *testing.T) {
+	messageTime := time.Unix(1743233467, 0)
+	update := &models.Update{
+		Message: &models.Message{
+			ID:   100,
+			Date: int(messageTime.Unix()),
+			Chat: models.Chat{ID: 54321},
+		},
+	}
+
+	config := Entity.Config{}
+	config.Output.PersonDir = "/person"
+	config.Output.ChannelDir = "/channel"
+
+	meta := ResolveSourceMeta(update, config)
+	if !meta.SourceDate.Equal(messageTime) {
+		t.Fatalf("expected source date %v, got %v", messageTime, meta.SourceDate)
+	}
+}
+
 func TestResolveSourceMeta_ForwardedChannelWithUsername(t *testing.T) {
 	update := &models.Update{
 		Message: &models.Message{

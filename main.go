@@ -11,6 +11,7 @@ import (
 	"telegram-message-sync-bot/internal/Handler"
 	"telegram-message-sync-bot/internal/service/archivemigrationservice"
 	"telegram-message-sync-bot/internal/service/bootstrapservice"
+	"telegram-message-sync-bot/internal/service/jsonbackfillservice"
 	"telegram-message-sync-bot/internal/service/pipelineservice"
 	"telegram-message-sync-bot/pkg/FileUtils"
 	"telegram-message-sync-bot/pkg/LogUtils"
@@ -283,8 +284,42 @@ func buildRootCommand() *cobra.Command {
 		},
 	}
 
+	var cmdMigrateJSONToDB = &cobra.Command{
+		Use:   "json-to-db",
+		Short: "Import archived JSON updates into database",
+		Long:  `Import archived JSON updates into database.`,
+		Args:  cobra.MinimumNArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := bootstrapservice.LoadConfig(configFile)
+			if err != nil {
+				fmt.Printf("加载配置失败: %v\n", err)
+				return
+			}
+
+			err = bootstrapservice.InitRuntime(cfg)
+			if err != nil {
+				fmt.Printf("初始化运行时失败: %v\n", err)
+				LogUtils.GetLogger().Println(err)
+				return
+			}
+
+			stats, err := jsonbackfillservice.BackfillFromJSON(cfg)
+			if err != nil {
+				fmt.Printf("JSON 补录数据库失败: %v\n", err)
+				return
+			}
+
+			fmt.Printf("JSON 补录数据库完成: %+v\n", stats)
+		},
+	}
+
 	cmdMigrateBackfill.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
 	err := cmdMigrateBackfill.MarkFlagRequired("config")
+	if err != nil {
+		return cmdMigrate
+	}
+	cmdMigrateJSONToDB.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
+	err = cmdMigrateJSONToDB.MarkFlagRequired("config")
 	if err != nil {
 		return cmdMigrate
 	}
@@ -295,6 +330,7 @@ func buildRootCommand() *cobra.Command {
 	}
 
 	cmdMigrate.AddCommand(cmdMigrateBackfill)
+	cmdMigrate.AddCommand(cmdMigrateJSONToDB)
 	cmdMigrate.AddCommand(cmdMigrateMoveLegacy)
 
 	cmdSync.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")

@@ -51,11 +51,18 @@ systemctl --user enable tg-sync.service
 
 ### Migration from datebase
 
-Bot support exporting markdown files from database(`archives/archive.db`), and also support moving legacy root markdown files to pending-delete directory.
+Bot support exporting markdown files from database(`archives/archive.db`),
+importing archived JSON updates into database, and also support moving legacy
+root markdown files to pending-delete directory.
 
 ```shell
 # Backfill all messages from DB
 ./tg migrate backfill -c ./config/config.yaml
+
+# Import archived JSON updates into DB only
+# This command only writes database records. It does not rewrite markdown files
+# and does not download attachments.
+./tg migrate json-to-db -c ./config/config.yaml
 
 # Move legacy root markdown files to pending-delete directory
 ./scripts/migration/move-legacy-to-pending-delete.sh

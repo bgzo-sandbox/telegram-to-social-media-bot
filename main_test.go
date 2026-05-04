@@ -85,6 +85,13 @@ func TestBuildRootCommand_HasMigrateMoveLegacySubcommand(t *testing.T) {
 	}
 }
 
+func TestBuildRootCommand_HasMigrateJsonToDBSubcommand(t *testing.T) {
+	root := buildRootCommand()
+	if cmd, _, err := root.Find([]string{"migrate", "json-to-db"}); err != nil || cmd == nil || cmd.Name() != "json-to-db" {
+		t.Fatalf("expected migrate json-to-db subcommand to exist")
+	}
+}
+
 func TestMigrateMoveLegacyHelp_Executes(t *testing.T) {
 	root := buildRootCommand()
 	buf := &bytes.Buffer{}
@@ -100,12 +107,43 @@ func TestMigrateMoveLegacyHelp_Executes(t *testing.T) {
 	}
 }
 
+func TestMigrateJsonToDBHelp_Executes(t *testing.T) {
+	root := buildRootCommand()
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetArgs([]string{"migrate", "json-to-db", "--help"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("expected migrate json-to-db help execute without error, got: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Import archived JSON updates into database") {
+		t.Fatalf("expected help output to contain json-to-db description")
+	}
+}
+
 func TestMigrateMoveLegacy_ConfigRequired(t *testing.T) {
 	root := buildRootCommand()
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
 	root.SetErr(buf)
 	root.SetArgs([]string{"migrate", "move-legacy"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("expected error when config flag is missing")
+	}
+	if !strings.Contains(err.Error(), "required flag") {
+		t.Fatalf("expected required flag error, got: %v", err)
+	}
+}
+
+func TestMigrateJsonToDB_ConfigRequired(t *testing.T) {
+	root := buildRootCommand()
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(buf)
+	root.SetArgs([]string{"migrate", "json-to-db"})
 
 	err := root.Execute()
 	if err == nil {

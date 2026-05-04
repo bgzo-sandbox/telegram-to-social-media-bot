@@ -38,6 +38,14 @@ tags:
 - Markdown 完整内容由 `config/template.txt` 统一输出，front matter 不再在服务里硬编码拼接。
 - 重复消息优先依赖数据库唯一约束判断。
 
+### 历史 JSON 补录
+
+- 当前支持离线扫描 `archives/json` 中的历史 Telegram update JSON。
+- 补录命令固定为 `tg migrate json-to-db`。
+- 历史补录只写消息主数据到 SQLite，不重写 Markdown，不补抓附件，不触发同步。
+- 历史补录的 `CreatedTime` 优先取 JSON 文件修改时间，取不到时回退到消息时间。
+- 历史补录必须可重复执行；重复消息固定记入 duplicates，不作为致命失败。
+
 ### 同步
 
 - 只有 `socialMediaSync.enable: true` 时才考虑同步。

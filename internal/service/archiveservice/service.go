@@ -103,17 +103,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 
 	FileUtils.OutputString(meta.OutputPath, meta.FileName, contentWithFrontMatter)
 
-	savedMsg := Entity.Message{
-		Content: msgText,
-
-		MessageID:   int64(meta.MessageID),
-		Username:    meta.SourceID,
-		MessageUrl:  meta.SourceLink,
-		MessageDate: meta.SourceDate,
-		Attachments: assets,
-
-		CreatedTime: archiveNow,
-	}
+	savedMsg := BuildArchivedMessage(meta, msgText, archiveNow, assets)
 
 	messageID, err := Database.SaveMessage(&savedMsg)
 	if err != nil {
@@ -127,6 +117,22 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 
 	LogUtils.GetLogger().Printf("Save successful with: %d\n", messageID)
 	return PersistResult{OK: true, Message: meta.FileName, SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: messageID}
+}
+
+// BuildArchivedMessage 统一构造数据库消息对象，供实时归档和历史补录共同复用。
+// 这样做的原因是把消息字段映射规则固定在单点，避免不同入口写出不一致的数据库记录。
+func BuildArchivedMessage(meta SourceMeta, msgText string, archiveTime time.Time, assets []Entity.Attachment) Entity.Message {
+	return Entity.Message{
+		Content: msgText,
+
+		MessageID:   int64(meta.MessageID),
+		Username:    meta.SourceID,
+		MessageUrl:  meta.SourceLink,
+		MessageDate: meta.SourceDate,
+		Attachments: assets,
+
+		CreatedTime: archiveTime,
+	}
 }
 
 func resolveArchivedMessageID(messageID int64, sourceID string) int64 {
@@ -215,10 +221,15 @@ func isMessageArchived(meta SourceMeta) bool {
 // ResolveSourceMeta 将 Telegram 原始消息转换为统一来源元信息（来源ID、文件名、落盘路径、消息链接等）。
 // 这样做的原因是统一“私聊消息/频道转发消息”的分支处理，避免上层重复判断来源类型。
 func ResolveSourceMeta(update *models.Update, config Entity.Config) SourceMeta {
+	messageDate := time.Now()
+	if update != nil && update.Message != nil {
+		messageDate = time.Unix(int64(update.Message.Date), 0)
+	}
+
 	meta := SourceMeta{
 		ArchiveRoot: config.Output.PersonDir,
 		SourceID:    fmt.Sprintf("%d", update.Message.Chat.ID),
-		SourceDate:  time.Now(),
+		SourceDate:  messageDate,
 		MessageID:   update.Message.ID,
 	}
 

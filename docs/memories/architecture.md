@@ -32,6 +32,7 @@ tags:
 - `internal/service/bootstrapservice`：运行前初始化。
 - `internal/service/pipelineservice`：主流程编排。
 - `internal/service/archiveservice`：消息归档、模板渲染、文件落盘、数据库写入。
+- `internal/service/jsonbackfillservice`：离线扫描 `archives/json` 并把历史 JSON 补录进 SQLite。
 - `internal/service/syncservice`：同步判定、平台分发。
 - `internal/service/notifyservice`：通知目标解析、通知内容拼装。
 - `internal/service/adminqueryservice`：管理首页、来源列表、消息列表、消息详情等只读查询编排。
@@ -102,6 +103,14 @@ tags:
 - 执行中对“同一消息 + 同一范围”应用最小防重入保护。
 - 执行后结果立即追加写入同步记录，并回显到 Telegram 管理页。
 - 最终回归口径当前以 `go test ./...` 为准，核心管理链路已纳入自动测试覆盖。
+
+### JSON 补录流
+
+- `tg migrate json-to-db -c ./config/config.yaml` 负责离线历史补录。
+- 补录流固定读取 `archives/json` 下的历史 Telegram Update JSON。
+- 补录流复用 `archiveservice.ResolveSourceMeta()`、`archiveservice.SelectMsgText()` 和 `archiveservice.BuildArchivedMessage()`。
+- 补录流只写数据库，不重写 Markdown，不下载附件，不触发社媒同步。
+- 幂等口径固定依赖数据库唯一约束 `(message_id, username)`。
 
 ## 当前稳定约束
 
