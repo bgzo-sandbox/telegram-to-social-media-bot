@@ -1,13 +1,16 @@
-.idea/
-/archives/
+# Data
+archives/
+backup/
 
+# config
 config/config.yaml
-# binary files
-tg
-# deployment files
+
+# deploy
 tg-sync.service
 
-dist/
+# binary
+tg
+
 # References via: https://github.com/github/gitignore
 # Visual Studio Code
 # .vscode/
