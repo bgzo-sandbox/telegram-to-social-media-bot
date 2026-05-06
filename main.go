@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/internal/Handler"
 	"telegram-message-sync-bot/internal/service/archivemigrationservice"
@@ -25,7 +26,7 @@ import (
 // 全局配置
 var globalConfig Entity.Config
 
-const unauthorizedText = "Go fuck yourself!" //"无权限"
+const unauthorizedText = "无权限"
 
 // start 启动 Telegram Bot
 func start(botToken string) {
@@ -144,6 +145,23 @@ func respondUnauthorized(ctx context.Context, b *bot.Bot, update *models.Update)
 		return
 	}
 
+	if isGroupChatUpdate(update) {
+		if update.CallbackQuery != nil {
+			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+				CallbackQueryID: update.CallbackQuery.ID,
+			})
+		}
+
+		text := buildUnauthorizedGroupNotification(update)
+		for _, chatID := range globalConfig.TargetUserList {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: chatID,
+				Text:   text,
+			})
+		}
+		return
+	}
+
 	if update.CallbackQuery != nil {
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
 			CallbackQueryID: update.CallbackQuery.ID,
@@ -159,6 +177,99 @@ func respondUnauthorized(ctx context.Context, b *bot.Bot, update *models.Update)
 			Text:   unauthorizedText,
 		})
 	}
+}
+
+func isGroupChatUpdate(update *models.Update) bool {
+	chat, ok := resolveUpdateChat(update)
+	if !ok {
+		return false
+	}
+
+	return chat.Type == "group" || chat.Type == "supergroup"
+}
+
+func resolveUpdateChat(update *models.Update) (models.Chat, bool) {
+	if update == nil {
+		return models.Chat{}, false
+	}
+
+	if update.Message != nil {
+		return update.Message.Chat, true
+	}
+
+	if update.CallbackQuery != nil && update.CallbackQuery.Message.Message != nil {
+		return update.CallbackQuery.Message.Message.Chat, true
+	}
+
+	return models.Chat{}, false
+}
+
+func buildUnauthorizedGroupNotification(update *models.Update) string {
+	return fmt.Sprintf(
+		"用户 %s 无交互权限，交互内容：%s，不记录数据库，跳过处理",
+		resolveActorDisplay(update),
+		resolveInteractionContent(update),
+	)
+}
+
+func resolveActorDisplay(update *models.Update) string {
+	if update == nil {
+		return "unknown"
+	}
+
+	if update.Message != nil && update.Message.From != nil {
+		return formatUserDisplay(*update.Message.From)
+	}
+
+	if update.CallbackQuery != nil {
+		return formatUserDisplay(update.CallbackQuery.From)
+	}
+
+	return "unknown"
+}
+
+func formatUserDisplay(user models.User) string {
+	if user.Username != "" {
+		return fmt.Sprintf("@%s(%d)", user.Username, user.ID)
+	}
+
+	fullName := strings.TrimSpace(strings.TrimSpace(user.FirstName) + " " + strings.TrimSpace(user.LastName))
+	if fullName != "" {
+		return fmt.Sprintf("%s(%d)", fullName, user.ID)
+	}
+
+	if user.ID != 0 {
+		return fmt.Sprintf("%d", user.ID)
+	}
+
+	return "unknown"
+}
+
+func resolveInteractionContent(update *models.Update) string {
+	if update == nil {
+		return "空内容"
+	}
+
+	if update.Message != nil {
+		text := strings.TrimSpace(update.Message.Text)
+		if text != "" {
+			return text
+		}
+
+		caption := strings.TrimSpace(update.Message.Caption)
+		if caption != "" {
+			return caption
+		}
+	}
+
+	if update.CallbackQuery != nil {
+		data := strings.TrimSpace(update.CallbackQuery.Data)
+		if data != "" {
+			return data
+		}
+	}
+
+	return "空内容"
 }
 
 func persistJSON(update *models.Update) (bool, string) {

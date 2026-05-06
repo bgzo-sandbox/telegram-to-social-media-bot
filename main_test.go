@@ -197,3 +197,61 @@ func TestIsUpdateAuthorized_MissingSenderRejectedWhenWhitelistEnabled(t *testing
 		t.Fatalf("expected update without sender to be rejected when authorizedUserList is enabled")
 	}
 }
+
+func TestIsGroupChatUpdate_MessageGroup(t *testing.T) {
+	update := &models.Update{Message: &models.Message{Chat: models.Chat{ID: -1001, Type: "group"}}}
+
+	if !isGroupChatUpdate(update) {
+		t.Fatalf("expected group message update to be recognized as group chat")
+	}
+}
+
+func TestIsGroupChatUpdate_CallbackSupergroup(t *testing.T) {
+	update := &models.Update{CallbackQuery: &models.CallbackQuery{Message: models.MaybeInaccessibleMessage{Message: &models.Message{Chat: models.Chat{ID: -1001, Type: "supergroup"}}}}}
+
+	if !isGroupChatUpdate(update) {
+		t.Fatalf("expected supergroup callback update to be recognized as group chat")
+	}
+}
+
+func TestIsGroupChatUpdate_PrivateChat(t *testing.T) {
+	update := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 42, Type: "private"}}}
+
+	if isGroupChatUpdate(update) {
+		t.Fatalf("expected private chat update not to be recognized as group chat")
+	}
+}
+
+func TestBuildUnauthorizedGroupNotification_UsesUsernameAndText(t *testing.T) {
+	update := &models.Update{Message: &models.Message{
+		Text: "hello bot",
+		From: &models.User{ID: 42, Username: "alice"},
+	}}
+
+	got := buildUnauthorizedGroupNotification(update)
+	want := "用户 @alice(42) 无交互权限，交互内容：hello bot，不记录数据库，跳过处理"
+	if got != want {
+		t.Fatalf("unexpected notification text: %s", got)
+	}
+}
+
+func TestBuildUnauthorizedGroupNotification_UsesCallbackData(t *testing.T) {
+	update := &models.Update{CallbackQuery: &models.CallbackQuery{
+		Data: "admin:home",
+		From: models.User{ID: 42, FirstName: "Alice", LastName: "Smith"},
+	}}
+
+	got := buildUnauthorizedGroupNotification(update)
+	want := "用户 Alice Smith(42) 无交互权限，交互内容：admin:home，不记录数据库，跳过处理"
+	if got != want {
+		t.Fatalf("unexpected callback notification text: %s", got)
+	}
+}
+
+func TestResolveInteractionContent_FallsBackToCaption(t *testing.T) {
+	update := &models.Update{Message: &models.Message{Caption: "photo caption"}}
+
+	if got := resolveInteractionContent(update); got != "photo caption" {
+		t.Fatalf("expected caption fallback, got: %s", got)
+	}
+}
