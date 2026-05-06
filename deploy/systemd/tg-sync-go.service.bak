@@ -1,0 +1,29 @@
+[Unit]
+Description=tg message sync bot.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# 环境变量
+# 确保指定了 HOME，Go 会根据 HOME 寻找默认缓存路径
+Environment="HOME=/home/bgzo"
+Environment="PATH=/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin"
+Environment="GOCACHE=/home/bgzo/.cache/go-build"
+# 如果使用了 Go Modules，建议也加上
+Environment="GO111MODULE=on"
+# Environment=http_proxy=192.168.31.20:10800
+# Environment=https_proxy=192.168.31.20:10800
+Environment=GOTWI_API_KEY=
+Environment=GOTWI_API_KEY_SECRET=
+
+# 工作目录
+WorkingDirectory=/home/bgzo/workspaces/telegram-message-sync/
+Type=simple
+Restart=on-abort
+ExecStart=/home/linuxbrew/.linuxbrew/bin/go run /home/bgzo/workspaces/telegram-message-sync/main.go sync -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
