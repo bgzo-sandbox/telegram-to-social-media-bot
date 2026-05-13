@@ -33,6 +33,12 @@ func start(botToken string) {
 		bot.WithDefaultHandler(defalutHandler),
 		bot.WithMessageTextHandler("/start", bot.MatchTypeExact, Handler.Start),
 		bot.WithMessageTextHandler("/status", bot.MatchTypeExact, Handler.Version),
+		bot.WithMessageTextHandler("/admin", bot.MatchTypeExact, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+			Handler.AdminHome(ctx, b, update, globalConfig)
+		}),
+		bot.WithCallbackQueryDataHandler("admin:", bot.MatchTypePrefix, func(ctx context.Context, b *bot.Bot, update *models.Update) {
+			Handler.AdminCallback(ctx, b, update, globalConfig)
+		}),
 	}
 
 	b, err := bot.New(botToken, opts...)
@@ -44,6 +50,7 @@ func start(botToken string) {
 		Commands: []models.BotCommand{
 			{Command: "start", Description: "Start bot"},
 			{Command: "status", Description: "Check bot status"},
+			{Command: "admin", Description: "Open admin panel"},
 		},
 	})
 	if err != nil {

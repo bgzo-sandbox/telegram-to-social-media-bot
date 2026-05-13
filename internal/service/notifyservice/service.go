@@ -39,7 +39,23 @@ func BuildSyncNotifications(syncEnabled bool, syncReason string, results []syncs
 	notifications := make([]string, 0, len(results))
 	for _, result := range results {
 		if result.Success {
-			notifications = append(notifications, fmt.Sprintf("消息已同步至 %s!", result.Platform))
+			suffix := ""
+			if result.Truncated {
+				suffix = "，文本已截断"
+			}
+			if result.ImageRequested && result.UsedImage {
+				notifications = append(notifications, fmt.Sprintf("消息已同步至 %s，并附带图片%s!", result.Platform, suffix))
+				continue
+			}
+			if result.ImageRequested && !result.UsedImage {
+				notifications = append(notifications, fmt.Sprintf("消息已同步至 %s，但图片已跳过%s", result.Platform, suffix))
+				continue
+			}
+			notifications = append(notifications, fmt.Sprintf("消息已同步至 %s%s!", result.Platform, suffix))
+			continue
+		}
+		if result.ErrorMessage != "" {
+			notifications = append(notifications, fmt.Sprintf("同步 %s 失败: %s", result.Platform, result.ErrorMessage))
 			continue
 		}
 		notifications = append(notifications, fmt.Sprintf("同步 %s 失败", result.Platform))

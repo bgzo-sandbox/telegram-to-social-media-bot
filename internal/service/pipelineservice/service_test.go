@@ -2,12 +2,18 @@ package pipelineservice
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
+	"telegram-message-sync-bot/internal/Database"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/internal/service/archiveservice"
 	"telegram-message-sync-bot/internal/service/notifyservice"
@@ -223,5 +229,116 @@ func TestProcessUpdate_ModeFromConfig_Equivalent(t *testing.T) {
 
 	if !reflect.DeepEqual(serialResult, asyncResult) {
 		t.Fatalf("mode from config should keep equivalent result\nserial=%+v\nasync=%+v", serialResult, asyncResult)
+	}
+}
+
+type captureSender struct {
+	payload syncservice.Payload
+}
+
+func (c *captureSender) Name() string {
+	return "capture"
+}
+
+func (c *captureSender) Send(_ Entity.Config, payload syncservice.Payload) syncservice.DispatchResult {
+	c.payload = payload
+	return syncservice.DispatchResult{Platform: "capture", Success: true, ImageRequested: payload.Image != nil, UsedImage: payload.Image != nil}
+}
+
+func TestDefaultSyncStage_BuildPayloadWithImagePath(t *testing.T) {
+	sender := &captureSender{}
+	originalFactory := defaultSendersFactory
+	defaultSendersFactory = func() []syncservice.Sender {
+		return []syncservice.Sender{sender}
+	}
+	defer func() {
+		defaultSendersFactory = originalFactory
+	}()
+
+	config := Entity.Config{}
+	config.SocialMediaSync.Enable = true
+	config.SocialMediaSync.TargetChannel = []string{"imbGZo"}
+	imagePath := filepath.Join(t.TempDir(), "test.jpg")
+	if err := os.WriteFile(imagePath, []byte("img"), 0o644); err != nil {
+		t.Fatalf("failed to create test image: %v", err)
+	}
+
+	stage := defaultSyncStage{}
+	enabled, reason, results := stage.Run(config, archiveservice.PersistResult{
+		SourceID:  "imbGZo",
+		MsgText:   "content",
+		ImagePath: imagePath,
+	})
+
+	if !enabled {
+		t.Fatalf("expected sync enabled, got reason: %s", reason)
+	}
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("unexpected dispatch results: %+v", results)
+	}
+	if sender.payload.Text != "content" {
+		t.Fatalf("unexpected payload text: %+v", sender.payload)
+	}
+	if sender.payload.Image == nil || sender.payload.Image.FilePath != imagePath {
+		t.Fatalf("unexpected payload image: %+v", sender.payload)
+	}
+}
+
+func TestDefaultSyncStage_PersistDispatchResults(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite memory db: %v", err)
+	}
+	if err := db.AutoMigrate(&Entity.Message{}, &Entity.Attachment{}, &Entity.SyncRecord{}); err != nil {
+		t.Fatalf("failed to migrate tables: %v", err)
+	}
+	Database.DB = db
+
+	message := &Entity.Message{
+		MessageID:   3001,
+		Username:    "imbGZo",
+		Content:     "content",
+		MessageUrl:  "https://t.me/imbGZo/3001",
+		MessageDate: time.Now(),
+		CreatedTime: time.Now(),
+	}
+	archivedMessageID, err := Database.SaveMessage(message)
+	if err != nil {
+		t.Fatalf("failed to save message: %v", err)
+	}
+
+	sender := &captureSender{}
+	originalFactory := defaultSendersFactory
+	defaultSendersFactory = func() []syncservice.Sender {
+		return []syncservice.Sender{sender}
+	}
+	defer func() {
+		defaultSendersFactory = originalFactory
+	}()
+
+	config := Entity.Config{}
+	config.SocialMediaSync.Enable = true
+	config.SocialMediaSync.TargetChannel = []string{"imbGZo"}
+
+	stage := defaultSyncStage{}
+	_, _, results := stage.Run(config, archiveservice.PersistResult{
+		SourceID:          "imbGZo",
+		MsgText:           "content",
+		ArchivedMessageID: archivedMessageID,
+	})
+
+	if len(results) != 1 || !results[0].Success {
+		t.Fatalf("unexpected dispatch results: %+v", results)
+	}
+
+	records, err := Database.ListSyncRecordsByMessage(archivedMessageID)
+	if err != nil {
+		t.Fatalf("list sync records should succeed, got err: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one sync record, got %d", len(records))
+	}
+	if records[0].Platform != "capture" || records[0].Status != Entity.SyncStatusSucceeded {
+		t.Fatalf("unexpected persisted sync record: %+v", records[0])
 	}
 }

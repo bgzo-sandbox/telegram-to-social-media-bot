@@ -5,6 +5,11 @@ import (
 	"telegram-message-sync-bot/internal/Entity"
 )
 
+type SourceMessageCount struct {
+	SourceID      string
+	ArchivedCount int64
+}
+
 // 保存消息及附件
 func SaveMessage(msg *Entity.Message) (int64, error) {
 	err := DB.Create(msg).Error
@@ -41,6 +46,55 @@ func GetMessageByID(id int64) (*Entity.Message, error) {
 		return nil, err
 	}
 	return &msg, nil
+}
+
+func CountMessages() (int64, error) {
+	var count int64
+	err := DB.Model(&Entity.Message{}).Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func CountDistinctSources() (int64, error) {
+	var count int64
+	err := DB.Model(&Entity.Message{}).Distinct("username").Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func ListSourceMessageCounts() ([]SourceMessageCount, error) {
+	var rows []SourceMessageCount
+	err := DB.Model(&Entity.Message{}).
+		Select("username AS source_id, COUNT(*) AS archived_count").
+		Group("username").
+		Order("archived_count DESC, source_id ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
+func GetMessageBySource(messageID int64, username string) (*Entity.Message, error) {
+	var msg Entity.Message
+	err := DB.Preload("Attachments").Where("message_id = ? AND username = ?", messageID, username).First(&msg).Error
+	if err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
+func ListMessagesBySourceID(sourceID string) ([]Entity.Message, error) {
+	var msgs []Entity.Message
+	err := DB.Preload("Attachments").Where("username = ?", sourceID).Order("message_date DESC, id DESC").Find(&msgs).Error
+	if err != nil {
+		return nil, err
+	}
+	return msgs, nil
 }
 
 // 按用户查找消息（含附件）

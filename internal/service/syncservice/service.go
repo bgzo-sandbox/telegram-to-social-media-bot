@@ -2,17 +2,57 @@ package syncservice
 
 import (
 	"fmt"
+	"os"
+	"telegram-message-sync-bot/internal/Database"
 	"telegram-message-sync-bot/internal/Entity"
+	"telegram-message-sync-bot/pkg/LogUtils"
+	"time"
 )
+
+type ImagePayload struct {
+	FilePath string
+}
+
+type Payload struct {
+	Text  string
+	Image *ImagePayload
+}
 
 type Sender interface {
 	Name() string
-	Send(config Entity.Config, message string) bool
+	Send(config Entity.Config, payload Payload) DispatchResult
 }
 
 type DispatchResult struct {
-	Platform string
-	Success  bool
+	Platform       string
+	Success        bool
+	ImageRequested bool
+	UsedImage      bool
+	Truncated      bool
+	RemoteID       string
+	RemoteURL      string
+	ErrorMessage   string
+}
+
+type DispatchTrigger string
+
+const (
+	DispatchTriggerAutomatic DispatchTrigger = "automatic"
+	DispatchTriggerManual    DispatchTrigger = "manual"
+)
+
+func BuildPayload(text string, imagePath string) Payload {
+	payload := Payload{Text: text}
+	if imagePath == "" {
+		return payload
+	}
+
+	if _, err := os.Stat(imagePath); err != nil {
+		return payload
+	}
+
+	payload.Image = &ImagePayload{FilePath: imagePath}
+	return payload
 }
 
 // ShouldSync 根据配置和来源ID判定当前消息是否应进入社媒同步。
@@ -46,18 +86,62 @@ func ContainsExactTarget(targetChannels []string, sourceID string) bool {
 
 // Dispatch 统一调度多个 Sender 并汇总结果，不关心具体平台实现。
 // 这样做的原因是解耦“分发编排”和“平台细节”，便于扩展新平台与测试替身注入。
-func Dispatch(config Entity.Config, message string, senders []Sender) []DispatchResult {
+func Dispatch(config Entity.Config, payload Payload, senders []Sender) []DispatchResult {
 	results := make([]DispatchResult, 0, len(senders))
 	for _, sender := range senders {
 		if sender == nil {
 			continue
 		}
 
-		ok := sender.Send(config, message)
-		results = append(results, DispatchResult{
-			Platform: sender.Name(),
-			Success:  ok,
-		})
+		result := sender.Send(config, payload)
+		if result.Platform == "" {
+			result.Platform = sender.Name()
+		}
+		LogUtils.GetLogger().Printf(
+			"sync result platform=%s success=%t image_requested=%t used_image=%t\n",
+			result.Platform,
+			result.Success,
+			result.ImageRequested,
+			result.UsedImage,
+		)
+		results = append(results, result)
 	}
 	return results
+}
+
+func PersistDispatchResults(archivedMessageID int64, results []DispatchResult, trigger DispatchTrigger) error {
+	if archivedMessageID <= 0 || len(results) == 0 {
+		return nil
+	}
+
+	resolvedTrigger := Entity.SyncTrigger(trigger)
+	if resolvedTrigger == "" {
+		resolvedTrigger = Entity.SyncTriggerAutomatic
+	}
+
+	for _, result := range results {
+		status := Entity.SyncStatusFailed
+		if result.Success {
+			status = Entity.SyncStatusSucceeded
+		}
+
+		record := &Entity.SyncRecord{
+			ArchivedMessageID: archivedMessageID,
+			Platform:          result.Platform,
+			Status:            status,
+			RemoteID:          result.RemoteID,
+			RemoteURL:         result.RemoteURL,
+			ErrorMessage:      result.ErrorMessage,
+			Trigger:           resolvedTrigger,
+			ImageRequested:    result.ImageRequested,
+			UsedImage:         result.UsedImage,
+			CreatedTime:       time.Now(),
+		}
+
+		if _, err := Database.SaveSyncRecord(record); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

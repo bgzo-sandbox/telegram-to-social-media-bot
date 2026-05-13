@@ -23,11 +23,13 @@ import (
 )
 
 type PersistResult struct {
-	OK         bool
-	Message    string
-	SourceLink string
-	MsgText    string
-	SourceID   string
+	OK                bool
+	Message           string
+	SourceLink        string
+	MsgText           string
+	SourceID          string
+	ImagePath         string
+	ArchivedMessageID int64
 }
 
 type SourceMeta struct {
@@ -50,10 +52,12 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 	meta := ResolveSourceMeta(update, config)
 	msgText := SelectMsgText(update)
 	photoLink := ""
+	imagePath := ""
 	assets := []Entity.Attachment{}
+	existingArchivedMessageID := resolveArchivedMessageID(int64(meta.MessageID), meta.SourceID)
 
 	if meta.SourceLink != "" && isMessageArchived(meta) {
-		return PersistResult{OK: false, Message: "消息已存在", SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+		return PersistResult{OK: false, Message: "消息已存在", SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ArchivedMessageID: existingArchivedMessageID}
 	}
 
 	if update.Message.ForwardOrigin != nil && update.Message.ForwardOrigin.Type == "channel" {
@@ -65,6 +69,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 			if file != nil {
 				files = append(files, file.FilePath)
 				assets = append(assets, *file)
+				imagePath = file.FilePath
 			}
 			photoLink = formatDownloadedFiles(files)
 		}
@@ -82,18 +87,18 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 
 	tmplData, err := os.ReadFile(config.Template.Dir)
 	if err != nil {
-		return PersistResult{OK: false, Message: fmt.Sprintf("读取模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+		return PersistResult{OK: false, Message: fmt.Sprintf("读取模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: existingArchivedMessageID}
 	}
 
 	tmpl, err := template.New("example").Parse(string(tmplData))
 	if err != nil {
-		return PersistResult{OK: false, Message: fmt.Sprintf("解析模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+		return PersistResult{OK: false, Message: fmt.Sprintf("解析模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: existingArchivedMessageID}
 	}
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, data)
 	if err != nil {
-		return PersistResult{OK: false, Message: fmt.Sprintf("渲染模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+		return PersistResult{OK: false, Message: fmt.Sprintf("渲染模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: existingArchivedMessageID}
 	}
 	frontMatter := BuildFrontMatter(meta, msgText, archiveNow)
 	contentWithFrontMatter := frontMatter + "\n" + strings.TrimLeft(buf.String(), "\n")
@@ -115,15 +120,27 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 	messageID, err := Database.SaveMessage(&savedMsg)
 	if err != nil {
 		if Database.IsDuplicateMessageError(err) {
-			return PersistResult{OK: false, Message: "消息已存在", SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+			return PersistResult{OK: false, Message: "消息已存在", SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: resolveArchivedMessageID(int64(meta.MessageID), meta.SourceID)}
 		}
 
 		LogUtils.GetLogger().Println(err)
-		return PersistResult{OK: false, Message: fmt.Sprintf("消息入库失败: %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+		return PersistResult{OK: false, Message: fmt.Sprintf("消息入库失败: %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: existingArchivedMessageID}
 	}
 
 	LogUtils.GetLogger().Printf("Save successful with: %d\n", messageID)
-	return PersistResult{OK: true, Message: meta.FileName, SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID}
+	return PersistResult{OK: true, Message: meta.FileName, SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: messageID}
+}
+
+func resolveArchivedMessageID(messageID int64, sourceID string) int64 {
+	if messageID == 0 || sourceID == "" {
+		return 0
+	}
+
+	msg, err := Database.GetMessageBySource(messageID, sourceID)
+	if err != nil {
+		return 0
+	}
+	return msg.ID
 }
 
 // BuildFrontMatter 生成强制 Front Matter。

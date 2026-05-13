@@ -5,14 +5,39 @@ import (
 	"telegram-message-sync-bot/pkg/SocialMediaUtils"
 )
 
+var sendBlueSkyText = SocialMediaUtils.SendBlueSky
+var sendBlueSkyImage = SocialMediaUtils.SendBlueSkyWithImage
+var sendMastodonText = SocialMediaUtils.SendMastodon
+var sendMastodonImage = SocialMediaUtils.SendMastodonWithImage
+var sendTwitterText = SocialMediaUtils.SendTwitter
+var sendTwitterImage = SocialMediaUtils.SendTwitterWithImage
+var sendBlueSkyTextDetailed = SocialMediaUtils.SendBlueSkyDetailed
+var sendBlueSkyImageDetailed = SocialMediaUtils.SendBlueSkyWithImageDetailed
+var sendMastodonTextDetailed = SocialMediaUtils.SendMastodonDetailed
+var sendMastodonImageDetailed = SocialMediaUtils.SendMastodonWithImageDetailed
+var sendTwitterTextDetailed = SocialMediaUtils.SendTwitterDetailed
+var sendTwitterImageDetailed = SocialMediaUtils.SendTwitterWithImageDetailed
+
 type blueSkySender struct{}
 
 func (blueSkySender) Name() string {
 	return "BlueSky"
 }
 
-func (blueSkySender) Send(config Entity.Config, message string) bool {
-	return SocialMediaUtils.SendBlueSky(config, message)
+func (blueSkySender) Send(config Entity.Config, payload Payload) DispatchResult {
+	prepared := PreparePlatformText("BlueSky", payload.Text)
+	if payload.Image != nil && payload.Image.FilePath != "" {
+		imageResult := sendBlueSkyImageDetailed(config, prepared.Text, payload.Image.FilePath)
+		if imageResult.Success {
+			return dispatchResultFromPublish("BlueSky", imageResult, true, true, prepared.Truncated)
+		}
+		textResult := sendBlueSkyTextDetailed(config, prepared.Text)
+		if !textResult.Success && textResult.ErrorMessage == "" {
+			textResult.ErrorMessage = imageResult.ErrorMessage
+		}
+		return dispatchResultFromPublish("BlueSky", textResult, true, false, prepared.Truncated)
+	}
+	return dispatchResultFromPublish("BlueSky", sendBlueSkyTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
 }
 
 type mastodonSender struct{}
@@ -21,8 +46,20 @@ func (mastodonSender) Name() string {
 	return "Mastodon"
 }
 
-func (mastodonSender) Send(config Entity.Config, message string) bool {
-	return SocialMediaUtils.SendMastodon(config, message)
+func (mastodonSender) Send(config Entity.Config, payload Payload) DispatchResult {
+	prepared := PreparePlatformText("Mastodon", payload.Text)
+	if payload.Image != nil && payload.Image.FilePath != "" {
+		imageResult := sendMastodonImageDetailed(config, prepared.Text, payload.Image.FilePath)
+		if imageResult.Success {
+			return dispatchResultFromPublish("Mastodon", imageResult, true, true, prepared.Truncated)
+		}
+		textResult := sendMastodonTextDetailed(config, prepared.Text)
+		if !textResult.Success && textResult.ErrorMessage == "" {
+			textResult.ErrorMessage = imageResult.ErrorMessage
+		}
+		return dispatchResultFromPublish("Mastodon", textResult, true, false, prepared.Truncated)
+	}
+	return dispatchResultFromPublish("Mastodon", sendMastodonTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
 }
 
 type twitterSender struct{}
@@ -31,8 +68,20 @@ func (twitterSender) Name() string {
 	return "Twitter"
 }
 
-func (twitterSender) Send(config Entity.Config, message string) bool {
-	return SocialMediaUtils.SendTwitter(config, message)
+func (twitterSender) Send(config Entity.Config, payload Payload) DispatchResult {
+	prepared := PreparePlatformText("Twitter", payload.Text)
+	if payload.Image != nil && payload.Image.FilePath != "" {
+		imageResult := sendTwitterImageDetailed(config, prepared.Text, payload.Image.FilePath)
+		if imageResult.Success {
+			return dispatchResultFromPublish("Twitter", imageResult, true, true, prepared.Truncated)
+		}
+		textResult := sendTwitterTextDetailed(config, prepared.Text)
+		if !textResult.Success && textResult.ErrorMessage == "" {
+			textResult.ErrorMessage = imageResult.ErrorMessage
+		}
+		return dispatchResultFromPublish("Twitter", textResult, true, false, prepared.Truncated)
+	}
+	return dispatchResultFromPublish("Twitter", sendTwitterTextDetailed(config, prepared.Text), false, false, prepared.Truncated)
 }
 
 func DefaultSenders() []Sender {
@@ -40,5 +89,18 @@ func DefaultSenders() []Sender {
 		blueSkySender{},
 		mastodonSender{},
 		twitterSender{},
+	}
+}
+
+func dispatchResultFromPublish(platform string, result SocialMediaUtils.PublishResult, imageRequested bool, usedImage bool, truncated bool) DispatchResult {
+	return DispatchResult{
+		Platform:       platform,
+		Success:        result.Success,
+		ImageRequested: imageRequested,
+		UsedImage:      usedImage,
+		Truncated:      truncated,
+		RemoteID:       result.RemoteID,
+		RemoteURL:      result.RemoteURL,
+		ErrorMessage:   result.ErrorMessage,
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"telegram-message-sync-bot/internal/service/archiveservice"
 	"telegram-message-sync-bot/internal/service/notifyservice"
 	"telegram-message-sync-bot/internal/service/syncservice"
+	"telegram-message-sync-bot/pkg/LogUtils"
 )
 
 // ArchiveStage 定义归档阶段可替换接口。
@@ -60,11 +61,17 @@ func (defaultArchiveStage) Run(ctx context.Context, b *bot.Bot, update *models.U
 
 type defaultSyncStage struct{}
 
+var defaultSendersFactory = syncservice.DefaultSenders
+
 func (defaultSyncStage) Run(config Entity.Config, persistResult archiveservice.PersistResult) (bool, string, []syncservice.DispatchResult) {
 	syncEnabled, syncReason := syncservice.ShouldSync(config, persistResult.SourceID)
 	results := make([]syncservice.DispatchResult, 0)
 	if syncEnabled {
-		results = syncservice.Dispatch(config, persistResult.MsgText, syncservice.DefaultSenders())
+		payload := syncservice.BuildPayload(persistResult.MsgText, persistResult.ImagePath)
+		results = syncservice.Dispatch(config, payload, defaultSendersFactory())
+		if err := syncservice.PersistDispatchResults(persistResult.ArchivedMessageID, results, syncservice.DispatchTriggerAutomatic); err != nil {
+			LogUtils.GetLogger().Printf("persist sync records failed: %v\n", err)
+		}
 	}
 	return syncEnabled, syncReason, results
 }

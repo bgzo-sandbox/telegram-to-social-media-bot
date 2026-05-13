@@ -45,18 +45,22 @@ func TestBuildSyncNotifications(t *testing.T) {
 	}
 
 	results := []syncservice.DispatchResult{
-		{Platform: "BlueSky", Success: true},
-		{Platform: "Twitter", Success: false},
+		{Platform: "BlueSky", Success: true, ImageRequested: true, UsedImage: true, Truncated: true},
+		{Platform: "Mastodon", Success: true, ImageRequested: true, UsedImage: false},
+		{Platform: "Twitter", Success: false, ImageRequested: true, ErrorMessage: "too long"},
 	}
 	whenEnabled := BuildSyncNotifications(true, "", results)
-	if len(whenEnabled) != 2 {
+	if len(whenEnabled) != 3 {
 		t.Fatalf("unexpected enabled notification size: %d", len(whenEnabled))
 	}
-	if whenEnabled[0] != "消息已同步至 BlueSky!" {
+	if whenEnabled[0] != "消息已同步至 BlueSky，并附带图片，文本已截断!" {
 		t.Fatalf("unexpected first notification: %s", whenEnabled[0])
 	}
-	if whenEnabled[1] != "同步 Twitter 失败" {
+	if whenEnabled[1] != "消息已同步至 Mastodon，但图片已跳过" {
 		t.Fatalf("unexpected second notification: %s", whenEnabled[1])
+	}
+	if whenEnabled[2] != "同步 Twitter 失败: too long" {
+		t.Fatalf("unexpected third notification: %s", whenEnabled[2])
 	}
 }
 
