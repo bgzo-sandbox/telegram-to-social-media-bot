@@ -1,55 +1,21 @@
-# Telegram message sync bot
+[![Contributors](https://img.shields.io/github/contributors/bGZo/playground.svg?style=for-the-badge)](https://github.com/bGZo/playground/graphs/contributors)
+[![Forks](https://img.shields.io/github/forks/bGZo/playground.svg?style=for-the-badge)](https://github.com/bGZo/playground/network/members)
+[![Stargazers](https://img.shields.io/github/stars/bGZo/playground.svg?style=for-the-badge)](https://github.com/bGZo/playground/stargazers)
+[![Issues](https://img.shields.io/github/issues/bGZo/playground.svg?style=for-the-badge)](https://github.com/bGZo/playground/issues)
+[![Licence](https://img.shields.io/github/license/bGZo/playground.svg?style=for-the-badge)](https://github.com/bGZo/playground/blob/template/LICENCE)
+[![Telegram](https://img.shields.io/badge/-telegram-black.svg?style=for-the-badge&logo=telegram&colorB=555)](https://t.me/imbGZo)
 
-![](https://raw.githack.com/bGZo/assets/dev/2025/202503011548103.png)
+# Telegram Message Sync Bot
 
+This is a telegram bot for archiving message from bot and sync to social media. Of course, you can use it as a simple telegram bot for syncing message via telegram.
 
-This is a telegram bot for archiving message from bot and sync to social media.
-
-Of course, you can use it as a simple telegram bot for syncing message from telegram.
-
-## Why
-
-Telegram have a great API and contents than other social media. There's less bot, business and ads.
-
-So I spend a lot of time on it. The messges saved in `SavedMessage` is not enough. You should manage what you read. And post what you think to more social media.
+Telegram have a great API and contents than other social media. There's less bot, business and ads. So I spend a lot of time on it. The messges saved in `SavedMessage` is not enough. You should manage what you read. And post what you think to more social media.
 
 That's what this bot do.
 
-## How 
+## Getting Started
 
-- Golang
-- Gorm
-- Sqlite
-- Telebot
-- Social media API
-- Vibe code
-
-## Roadmap
-
-- [x] Messages archive
-  - [x] Rich text from Telegram
-  - [x] Media download
-- [x] Notification
-- [x] Database supported(sqlite)
-- [ ] Sync social media (beta)
-  - [x] Twitter
-  - [x] Mastodon
-  - [x] BlueSky
-  - [ ] Instagram
-  - [ ] Facebook
-  - [ ] Thread
-  - [ ] Reddit
-  - [ ] Douban
-  - [ ] Okjike
-  - [ ] Weibo
-  - [ ] Douyin
-  - [ ] Bilibili
-  - [ ] Xiaohongshu
-  - [ ] Coolapk
-  - [ ] Zhihu
-  - [ ] V2Ex
-
-## Quick start
+### Build and Run
 
 ```shell
 # install dependencies
@@ -65,19 +31,27 @@ chmod +x ./tg
 ./tg sync -c ./config/config.yaml
 ```
 
-### Pipeline execution mode (optional)
+### Deploy
 
-Set in `config/config.yaml`:
+```shell
+# 1. Run with nohup
+nohup ./tg sync -c ./config/config.yaml > bot.log 2>&1 &
+# kill background
+pkill -f tg
 
-```yaml
-pipeline:
-  executionMode: serial # serial | async_experimental
+# 2. Run with systemd
+# Rename `tg-sync.service.bak` to `tg-sync.service`, then fill token.
+cp deploy/systemd/tg-sync.service  ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user start tg-sync.service
+systemctl --user enable tg-sync.service
 ```
 
-- `serial`: default stable mode
-- `async_experimental`: experimental mode (should keep equivalent behavior currently)
+## Usage
 
-## Archive migration (DB -> local archives)
+### Migration from datebase
+
+
 
 Use unified CLI commands to rebuild/archive Markdown files from SQLite (`archives/archive.db`) into local archives directories.
 
@@ -127,55 +101,69 @@ find ./archives/channel -maxdepth 1 -type f -name '*.md' | wc -l
 find ./archives/260218-legacy-pending-delete -type f -name '*.md' | wc -l
 ```
 
-### Optional: run in background using nohup
+<!--
+## Vibe Coding
 
-```shell
-nohup ./tg sync -c ./config/config.yaml > bot.log 2>&1 &
+### GitHub copilot
 
-# kill background
-pkill -f tg
-```
+Make sure to keep `.github/instructions` folder clean and simplest, or it may make context understanding and code generation worse, such as, `agent`, `instructions` and `prompts` should not conflict each other.
 
-### Optional: run in background using nohup
+The **priority** of them should be like this:
 
-Rename `tg-sync.service.bak` to `tg-sync.service`, then fill token.
+Personal Instructions > Repository Instructions > Agent > Prompts > Your messages.
 
-```shell
-cp deploy/systemd/tg-sync.service  ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user start tg-sync.service
-systemctl --user enable tg-sync.service
-```
+And get the template for GitHub Copilot from https://github.com/doggy8088/github-copilot-configs/tree/main/.github
 
-Add following config:
 
-```shell
-[Unit]
-Description=tg message sync bot for %i.
-After=network.target
+## Common Steps:
 
-[Service]
-Type=simple
-User=%i
-Restart=on-abort
-Environment=http_proxy=192.168.31.20:10800
-Environment=https_proxy=192.168.31.20:10800
-ExecStart=/home/bgzo/workspaces/telegram-message-sync/tg sync -c /home/bgzo/workspaces/telegram-message-sync/config/config.yaml
+- Read the documentation in `docs/memories` to understand the project structure, design and tech stack.
+- Check the features in `docs/implementation-plans` to see if there are any questions or clarifications needed.
+- Plan the simplest implementation steps in `docs/implementation-plans`, then list it append to the existing plans, and make every step clear enough for anyone to pick up and execute, and also make sure to include the verification steps for each implementation step.
+- Then start implementation based on the plan step by step, and you should make sure keep these things:
+  - Only when the verification steps are passed, you can move on to the next step, otherwise you should fix the problems until the verification steps are passed.
+  - Link the related files, functions, or types in the codebase as much as possible, and also link the related plans if there are any. 
+  - Make sure to record progress and what you have done in every step in the plan and things in other files.
+  - Update the documents in `docs/memories` if there are any design changes or tech stack changes during the implementation.
 
-[Install]
-# WantedBy=multi-user.target
-WantedBy=graphical-session.target
-```
 
-Then restart systemd and enable `tg@username`
+## Roadmap
 
-```shell
-systemctl daemon-reload
-systenctl start tg@bgzo
-systenctl enable tg@bgzo
-```
+I use obdisian to manage roadmap of this project, and I will update it here when I have a clear plan for the next steps.
+
+- [x] Add basic structure and files[^template-inspired].
+- [x] Add Vibe coding support [^vibe-coding-inspired].
+
+[^template-inspired]: Template inspired by https://github.com/kelseyhightower/nocode, https://github.com/othneildrew/Best-README-Template
+
+[^vibe-coding-inspired]: https://github.com/tukuaiai/vibe-coding-cn
+
+See the [open issues](https://github.com/bGZo/playground/issues) for a full list of proposed features (and known issues).
+-->
+
+## Contributing
+
+Any contributions made are **greatly appreciated**.
+
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+Don't forget to give the project a star! Thanks again!
+
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+Top contributors:
+
+<a href="https://github.com/bGZo/playground/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=bGZo/playground" alt="contrib.rocks image" />
+</a>
 
 ## ALternatives
 
 - https://github.com/leaperone/MultiPost-Extension
 
+## License
+
+All code is licensed under the AGPL-3.0 license. See `LICENSE` for more information.

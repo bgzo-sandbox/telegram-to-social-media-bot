@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"telegram-message-sync-bot/internal/Database"
@@ -32,11 +31,11 @@ type LegacyCleanupStats struct {
 	PendingDir    string
 }
 
-const legacyBackupZipName = "260218-old-markdown-archives.zip"
-const legacyPendingDeleteDirName = "260218-legacy-pending-delete"
+const legacyBackupZipName = "old-markdown-archives.zip"
+const legacyPendingDeleteDirName = "legacy-pending-delete"
 
-// BackfillFromDatabase 按数据库全量补齐归档文件，并执行迁移后键集合核对。
-// 当前核对键使用 (source_id, message_id)。
+// BackfillFromDatabase 按数据库全量补齐归档文件，并执行迁移后期望路径集合核对。
+// 这样做的原因是兼容自定义文件名模板，避免再从文件名反解 message_id。
 func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 	stats := BackfillStats{}
 
@@ -55,16 +54,21 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 	}
 
 	stats.DBTotal = len(msgs)
-	expectedKeys := make(map[string]struct{}, len(msgs))
+	expectedPaths := make(map[string]struct{}, len(msgs))
 
 	for _, msg := range msgs {
 		sourceID := normalizeSourceID(msg.Username)
 		archiveRoot := resolveArchiveRoot(config, msg)
 		outputDir := filepath.Join(archiveRoot, sourceID)
-		fileName := fmt.Sprintf("%d.md", msg.MessageID)
+		fileName := archiveservice.ResolveArchiveFileName(config, archiveservice.SourceMeta{
+			SourceLink: msg.MessageUrl,
+			SourceDate: msg.MessageDate,
+			SourceID:   sourceID,
+			MessageID:  int(msg.MessageID),
+		}, msg.Content)
 		fullPath := filepath.Join(outputDir, fileName)
 
-		expectedKeys[buildKey(sourceID, msg.MessageID)] = struct{}{}
+		expectedPaths[filepath.Clean(fullPath)] = struct{}{}
 
 		if _, statErr := os.Stat(fullPath); statErr == nil {
 			stats.FilesSkipped++
@@ -73,17 +77,15 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 			return stats, fmt.Errorf("检查归档文件失败: %w", statErr)
 		}
 
-		frontMatter := archiveservice.BuildFrontMatter(archiveservice.SourceMeta{
-			SourceLink: msg.MessageUrl,
-			SourceDate: msg.MessageDate,
-			MessageID:  int(msg.MessageID),
-		}, msg.Content, msg.CreatedTime)
-
 		tplData := archiveservice.BuildTemplateData(
-			msg.MessageDate,
+			archiveservice.SourceMeta{
+				SourceLink: msg.MessageUrl,
+				SourceDate: msg.MessageDate,
+				SourceID:   sourceID,
+				MessageID:  int(msg.MessageID),
+			},
 			renderAttachmentMarkdown(msg.Attachments),
 			msg.Content,
-			msg.MessageUrl,
 			msg.CreatedTime,
 		)
 
@@ -92,7 +94,7 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 			return stats, fmt.Errorf("渲染模板失败: %w", execErr)
 		}
 
-		content := frontMatter + "\n" + strings.TrimLeft(buf.String(), "\n")
+		content := strings.TrimLeft(buf.String(), "\n")
 		if mkdirErr := os.MkdirAll(outputDir, 0o755); mkdirErr != nil {
 			return stats, fmt.Errorf("创建目录失败: %w", mkdirErr)
 		}
@@ -103,18 +105,18 @@ func BackfillFromDatabase(config Entity.Config) (BackfillStats, error) {
 		stats.FilesCreated++
 	}
 
-	actualKeys, err := collectArchiveKeys(config)
+	actualPaths, err := collectArchiveFilePaths(config)
 	if err != nil {
 		return stats, err
 	}
 
-	for key := range expectedKeys {
-		if _, ok := actualKeys[key]; !ok {
+	for path := range expectedPaths {
+		if _, ok := actualPaths[path]; !ok {
 			stats.MissingFromArchive++
 		}
 	}
-	for key := range actualKeys {
-		if _, ok := expectedKeys[key]; !ok {
+	for path := range actualPaths {
+		if _, ok := expectedPaths[path]; !ok {
 			stats.OrphanInArchive++
 		}
 	}
@@ -141,10 +143,6 @@ func normalizeSourceID(sourceID string) string {
 	return strings.ToLower(strings.TrimSpace(sourceID))
 }
 
-func buildKey(sourceID string, messageID int64) string {
-	return sourceID + "#" + strconv.FormatInt(messageID, 10)
-}
-
 func renderAttachmentMarkdown(assets []Entity.Attachment) string {
 	if len(assets) == 0 {
 		return ""
@@ -162,8 +160,8 @@ func renderAttachmentMarkdown(assets []Entity.Attachment) string {
 	return b.String()
 }
 
-func collectArchiveKeys(config Entity.Config) (map[string]struct{}, error) {
-	keys := map[string]struct{}{}
+func collectArchiveFilePaths(config Entity.Config) (map[string]struct{}, error) {
+	paths := map[string]struct{}{}
 	bases := []string{config.Output.PersonDir, config.Output.ChannelDir}
 
 	for _, base := range bases {
@@ -180,7 +178,6 @@ func collectArchiveKeys(config Entity.Config) (map[string]struct{}, error) {
 				continue
 			}
 
-			sourceID := normalizeSourceID(sourceDir.Name())
 			messageFiles, err := os.ReadDir(filepath.Join(base, sourceDir.Name()))
 			if err != nil {
 				return nil, fmt.Errorf("读取来源目录失败: %w", err)
@@ -194,18 +191,12 @@ func collectArchiveKeys(config Entity.Config) (map[string]struct{}, error) {
 					continue
 				}
 
-				idPart := strings.TrimSuffix(f.Name(), ".md")
-				messageID, parseErr := strconv.ParseInt(idPart, 10, 64)
-				if parseErr != nil {
-					continue
-				}
-
-				keys[buildKey(sourceID, messageID)] = struct{}{}
+				paths[filepath.Clean(filepath.Join(base, sourceDir.Name(), f.Name()))] = struct{}{}
 			}
 		}
 	}
 
-	return keys, nil
+	return paths, nil
 }
 
 // BackupAndMoveLegacySingleFiles 备份并移动旧单文件归档（source_id.md）到待删除目录。

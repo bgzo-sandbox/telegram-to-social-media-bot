@@ -16,7 +16,8 @@ type Config struct {
 	} `yaml:"log"`
 
 	Template struct {
-		Dir string `yaml:"dir"`
+		Dir              string `yaml:"dir"`
+		FileNameTemplate string `yaml:"file_name_template"`
 	} `yaml:"template"`
 
 	Token string `yaml:"token"`

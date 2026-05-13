@@ -21,7 +21,7 @@ func TestBackfillFromDatabase_CreatesMissingFilesAndVerifies(t *testing.T) {
 	channelDir := filepath.Join(tmp, "channel")
 	templatePath := filepath.Join(tmp, "template.txt")
 
-	if err := os.WriteFile(templatePath, []byte("{{.content}}\n{{.sourceTelegram}}"), 0o644); err != nil {
+	if err := os.WriteFile(templatePath, []byte("---\ntitle: {{.title}}\npublished: {{.published}}\nmodified: {{.modified}}\nsource: {{.source}}\ntags:\n  - tgchannel/{{.source_channel}}\n---\n\n{{.content}}\n{{.photo}}"), 0o644); err != nil {
 		t.Fatalf("failed to write template: %v", err)
 	}
 
@@ -59,9 +59,10 @@ func TestBackfillFromDatabase_CreatesMissingFilesAndVerifies(t *testing.T) {
 	channelFile := filepath.Join(channelDir, "mychannel", "101.md")
 	personFile := filepath.Join(personDir, "12345", "202.md")
 
-	assertFileContains(t, channelFile, "title: \"101-hello channel\"")
-	assertFileContains(t, channelFile, "source: \"https://t.me/mychannel/101\"")
-	assertFileContains(t, personFile, "source: \"\"")
+	assertFileContains(t, channelFile, "title: hello channel")
+	assertFileContains(t, channelFile, "source: https://t.me/mychannel/101")
+	assertFileContains(t, channelFile, "- tgchannel/mychannel")
+	assertFileContains(t, personFile, "source: ")
 }
 
 func TestBackfillFromDatabase_SkipsExistingFile(t *testing.T) {
@@ -146,6 +147,51 @@ func TestBackfillFromDatabase_VerifyDetectsOrphan(t *testing.T) {
 	if stats.OrphanInArchive != 1 {
 		t.Fatalf("expected orphan count 1, got stats: %+v", stats)
 	}
+}
+
+func TestBackfillFromDatabase_CustomFileNameTemplate(t *testing.T) {
+	tmp := t.TempDir()
+	personDir := filepath.Join(tmp, "person")
+	channelDir := filepath.Join(tmp, "channel")
+	templatePath := filepath.Join(tmp, "template.txt")
+
+	if err := os.WriteFile(templatePath, []byte("---\ntitle: {{.title}}\nsource: {{.source}}\n---\n\n{{.content}}"), 0o644); err != nil {
+		t.Fatalf("failed to write template: %v", err)
+	}
+
+	setupInMemoryDB(t)
+
+	now := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC)
+	seedMessages := []Entity.Message{
+		{MessageID: 101, Username: "MyChannel", MessageUrl: "https://t.me/mychannel/101", Content: "hello channel", MessageDate: now, CreatedTime: now},
+		{MessageID: 202, Username: "12345", MessageUrl: "", Content: "hello person", MessageDate: now, CreatedTime: now},
+	}
+	for _, m := range seedMessages {
+		msg := m
+		if _, err := Database.SaveMessage(&msg); err != nil {
+			t.Fatalf("failed to seed message: %v", err)
+		}
+	}
+
+	var cfg Entity.Config
+	cfg.Output.PersonDir = personDir
+	cfg.Output.ChannelDir = channelDir
+	cfg.Template.Dir = templatePath
+	cfg.Template.FileNameTemplate = "{{.id}}-{{.title-filename-truncated}}.md"
+
+	stats, err := BackfillFromDatabase(cfg)
+	if err != nil {
+		t.Fatalf("backfill failed: %v", err)
+	}
+
+	if stats.FilesCreated != 2 || stats.MissingFromArchive != 0 || stats.OrphanInArchive != 0 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+
+	channelFile := filepath.Join(channelDir, "mychannel", "101-hello-channel.md")
+	personFile := filepath.Join(personDir, "12345", "202-hello-person.md")
+	assertFileContains(t, channelFile, "title: hello channel")
+	assertFileContains(t, personFile, "title: hello person")
 }
 
 func setupInMemoryDB(t *testing.T) {

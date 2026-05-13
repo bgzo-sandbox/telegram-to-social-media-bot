@@ -17,6 +17,7 @@ import (
 	"telegram-message-sync-bot/pkg/StrUtils"
 	"telegram-message-sync-bot/pkg/TgUtils"
 	"time"
+	"unicode"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -51,6 +52,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 
 	meta := ResolveSourceMeta(update, config)
 	msgText := SelectMsgText(update)
+	meta.FileName = ResolveArchiveFileName(config, meta, msgText)
 	photoLink := ""
 	imagePath := ""
 	assets := []Entity.Attachment{}
@@ -83,7 +85,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 	LogUtils.GetLogger().Println(logCommandline)
 
 	archiveNow := time.Now()
-	data := BuildTemplateData(meta.SourceDate, photoLink, msgText, meta.SourceLink, archiveNow)
+	data := BuildTemplateData(meta, photoLink, msgText, archiveNow)
 
 	tmplData, err := os.ReadFile(config.Template.Dir)
 	if err != nil {
@@ -100,8 +102,7 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 	if err != nil {
 		return PersistResult{OK: false, Message: fmt.Sprintf("渲染模板失败, %v", err), SourceLink: meta.SourceLink, MsgText: msgText, SourceID: meta.SourceID, ImagePath: imagePath, ArchivedMessageID: existingArchivedMessageID}
 	}
-	frontMatter := BuildFrontMatter(meta, msgText, archiveNow)
-	contentWithFrontMatter := frontMatter + "\n" + strings.TrimLeft(buf.String(), "\n")
+	contentWithFrontMatter := strings.TrimLeft(buf.String(), "\n")
 
 	FileUtils.OutputString(meta.OutputPath, meta.FileName, contentWithFrontMatter)
 
@@ -199,11 +200,15 @@ func quoteYAMLString(s string) string {
 	return strconv.Quote(s)
 }
 
-// isMessageArchived 切换期兼容读取：先查新路径，读不到再回退旧单文件路径。
+// isMessageArchived 切换期兼容读取：新格式按目标文件是否存在判断，旧格式仍回退到单文件内容搜索。
 func isMessageArchived(meta SourceMeta) bool {
 	newArchivePath := filepath.Join(meta.OutputPath, meta.FileName)
-	if StrUtils.SearchInFile(newArchivePath, meta.SourceLink) {
+	if info, err := os.Stat(newArchivePath); err == nil && !info.IsDir() {
 		return true
+	}
+
+	if meta.SourceLink == "" {
+		return false
 	}
 
 	legacyArchivePath := filepath.Join(meta.ArchiveRoot, fmt.Sprintf("%s.md", meta.SourceID))
@@ -254,18 +259,106 @@ func SelectMsgText(update *models.Update) string {
 	return StrUtils.EscapeHashtags(TgUtils.HandleMsgLink(msgText, msgEntities))
 }
 
-// BuildTemplateData 生成模板渲染所需字段，统一时间格式和变量命名。
-// 这样做的原因是将模板数据构建从 I/O 逻辑中分离，方便测试与后续模板演进。
-func BuildTemplateData(sourceDate time.Time, photoLink, msgText, sourceLink string, now time.Time) map[string]interface{} {
-	timeFormat := "2006-01-02 15:04:05"
+// BuildTemplateData 生成归档模板渲染字段，统一标题规则、时间格式和兼容别名。
+// 这样做的原因是让完整 Markdown 模板成为唯一输出边界，同时降低模板升级成本。
+func BuildTemplateData(meta SourceMeta, photoLink, msgText string, now time.Time) map[string]interface{} {
+	published := formatFrontMatterTime(meta.SourceDate)
+	saved := formatFrontMatterTime(now)
+	title := buildArchiveTitle(msgText, meta.MessageID)
+
 	return map[string]interface{}{
-		"title":          sourceDate.Format(timeFormat),
+		"id":             meta.MessageID,
+		"title":          title,
+		"published":      published,
+		"modified":       saved,
+		"saved":          saved,
+		"source":         meta.SourceLink,
+		"source_channel": meta.SourceID,
 		"photo":          photoLink,
 		"content":        msgText,
-		"sourceTelegram": sourceLink,
-		"now":            now.Format(timeFormat),
-		"date":           sourceDate.Format(timeFormat),
+
+		// 兼容旧模板占位符，避免升级代码后现有模板立即失效。
+		"source_message": meta.SourceLink,
+		"sourceTelegram": meta.SourceLink,
+		"date":           published,
+		"now":            saved,
 	}
+}
+
+func buildArchiveTitle(content string, messageID int) string {
+	normalized := strings.TrimSpace(normalizeFrontMatterContent(content))
+	title := truncateForFrontMatter(normalized, 20)
+	if title != "" {
+		return title
+	}
+	return strconv.Itoa(messageID)
+}
+
+// ResolveArchiveFileName 按配置模板生成归档文件名；未配置时保持旧规则 message_id.md。
+// 这样做的原因是把文件名策略放在拥有正文上下文的一层，确保 title 规则可用且稳定。
+func ResolveArchiveFileName(config Entity.Config, meta SourceMeta, content string) string {
+	tmpl := strings.TrimSpace(config.Template.FileNameTemplate)
+	if tmpl == "" {
+		return fmt.Sprintf("%d.md", meta.MessageID)
+	}
+
+	title := sanitizeArchiveFileNameTitle(buildArchiveTitle(content, meta.MessageID))
+	if title == "" {
+		title = strconv.Itoa(meta.MessageID)
+	}
+
+	rendered := tmpl
+	rendered = strings.ReplaceAll(rendered, "{{.id}}", strconv.Itoa(meta.MessageID))
+	rendered = strings.ReplaceAll(rendered, "{{.title-filename-truncated}}", title)
+	rendered = sanitizeRenderedArchiveFileName(rendered)
+	if rendered == "" {
+		return fmt.Sprintf("%d.md", meta.MessageID)
+	}
+	return rendered
+}
+
+func sanitizeArchiveFileNameTitle(title string) string {
+	var builder strings.Builder
+	lastDash := false
+
+	for _, r := range strings.TrimSpace(title) {
+		switch {
+		case unicode.IsLetter(r), unicode.IsNumber(r):
+			builder.WriteRune(r)
+			lastDash = false
+		case unicode.IsSpace(r), r == '-', r == '_':
+			if builder.Len() > 0 && !lastDash {
+				builder.WriteRune('-')
+				lastDash = true
+			}
+		}
+	}
+
+	result := strings.Trim(builder.String(), "-")
+	result = truncateForFrontMatter(result, 20)
+	return strings.Trim(result, "-")
+}
+
+func sanitizeRenderedArchiveFileName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+
+	replacer := strings.NewReplacer(
+		"/", "-",
+		"\\", "-",
+		":", "-",
+		"*", "",
+		"?", "",
+		"\"", "",
+		"<", "",
+		">", "",
+		"|", "-",
+	)
+	trimmed = replacer.Replace(trimmed)
+	trimmed = strings.Trim(trimmed, ". ")
+	return filepath.Base(trimmed)
 }
 
 // formatDownloadedFiles 将下载后的媒体路径格式化为 Markdown 图片片段。

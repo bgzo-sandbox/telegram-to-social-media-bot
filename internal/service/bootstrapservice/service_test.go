@@ -23,6 +23,7 @@ func TestLoadConfig_Success(t *testing.T) {
 		"  dir: /tmp/log\n" +
 		"template:\n" +
 		"  dir: /tmp/template.txt\n" +
+		"  file_name_template: \"{{.id}}.md\"\n" +
 		"targetUserList:\n" +
 		"  - 1001\n" +
 		"authorizedUserList:\n" +
@@ -46,6 +47,9 @@ func TestLoadConfig_Success(t *testing.T) {
 	}
 	if config.Log.Dir != "/tmp/log" {
 		t.Fatalf("unexpected log dir: %s", config.Log.Dir)
+	}
+	if config.Template.FileNameTemplate != "{{.id}}.md" {
+		t.Fatalf("unexpected file name template: %s", config.Template.FileNameTemplate)
 	}
 	if len(config.SocialMediaSync.TargetChannel) != 1 || config.SocialMediaSync.TargetChannel[0] != "imbGZo" {
 		t.Fatalf("unexpected target channels: %+v", config.SocialMediaSync.TargetChannel)

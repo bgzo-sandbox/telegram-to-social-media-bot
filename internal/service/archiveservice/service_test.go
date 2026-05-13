@@ -80,6 +80,36 @@ func TestResolveSourceMeta_ForwardedChannelWithUsername(t *testing.T) {
 	}
 }
 
+func TestResolveArchiveFileName_DefaultTemplateFallback(t *testing.T) {
+	meta := SourceMeta{MessageID: 321}
+	if got := ResolveArchiveFileName(Entity.Config{}, meta, "hello world"); got != "321.md" {
+		t.Fatalf("expected default file name 321.md, got: %s", got)
+	}
+}
+
+func TestResolveArchiveFileName_CustomTemplate(t *testing.T) {
+	config := Entity.Config{}
+	config.Template.FileNameTemplate = "{{.id}}-{{.title-filename-truncated}}.md"
+	meta := SourceMeta{MessageID: 321}
+	content := "Hello, TG Archive! / unsafe _ title? with spaces"
+
+	got := ResolveArchiveFileName(config, meta, content)
+	if got != "321-Hello-TG-Archive.md" {
+		t.Fatalf("unexpected rendered file name: %s", got)
+	}
+}
+
+func TestResolveArchiveFileName_UsesMessageIDWhenSanitizedTitleEmpty(t *testing.T) {
+	config := Entity.Config{}
+	config.Template.FileNameTemplate = "{{.id}}-{{.title-filename-truncated}}.md"
+	meta := SourceMeta{MessageID: 789}
+
+	got := ResolveArchiveFileName(config, meta, "!!! ???")
+	if got != "789-789.md" {
+		t.Fatalf("expected message id fallback file name, got: %s", got)
+	}
+}
+
 func TestSelectMsgText_FallbackToCaption(t *testing.T) {
 	update := &models.Update{
 		Message: &models.Message{
@@ -95,22 +125,41 @@ func TestSelectMsgText_FallbackToCaption(t *testing.T) {
 }
 
 func TestBuildTemplateData_ContainsExpectedKeys(t *testing.T) {
-	sourceDate := time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC)
+	meta := SourceMeta{
+		SourceID:   "imbGZo",
+		SourceLink: "https://t.me/imbGZo/123",
+		SourceDate: time.Date(2026, 2, 17, 10, 0, 0, 0, time.UTC),
+		MessageID:  123,
+	}
 	now := time.Date(2026, 2, 17, 11, 0, 0, 0, time.UTC)
 
-	data := BuildTemplateData(sourceDate, "photo", "content", "link", now)
+	data := BuildTemplateData(meta, "photo", "这是一个测试标题，应该截断到二十个字符之后", now)
 
 	if data["photo"] != "photo" {
 		t.Fatalf("expected photo field")
 	}
-	if data["content"] != "content" {
+	if data["content"] != "这是一个测试标题，应该截断到二十个字符之后" {
 		t.Fatalf("expected content field")
 	}
-	if data["sourceTelegram"] != "link" {
-		t.Fatalf("expected sourceTelegram field")
+	if data["source"] != meta.SourceLink || data["source_message"] != meta.SourceLink || data["sourceTelegram"] != meta.SourceLink {
+		t.Fatalf("expected source aliases to be populated")
 	}
-	if data["title"] == "" || data["date"] == "" || data["now"] == "" {
-		t.Fatalf("expected non-empty formatted time fields")
+	if data["source_channel"] != meta.SourceID {
+		t.Fatalf("expected source_channel field")
+	}
+	if data["published"] != "2026-02-17T10:00:00" || data["saved"] != "2026-02-17T11:00:00" || data["modified"] != "2026-02-17T11:00:00" {
+		t.Fatalf("expected formatted time fields, got: %+v", data)
+	}
+	if data["title"] != "这是一个测试标题，应该截断到二十个字符之" {
+		t.Fatalf("unexpected title: %v", data["title"])
+	}
+}
+
+func TestBuildTemplateData_UsesMessageIDWhenContentEmpty(t *testing.T) {
+	meta := SourceMeta{MessageID: 456}
+	data := BuildTemplateData(meta, "", "", time.Date(2026, 2, 17, 11, 0, 0, 0, time.UTC))
+	if data["title"] != "456" {
+		t.Fatalf("expected message id fallback title, got: %v", data["title"])
 	}
 }
 
@@ -181,7 +230,7 @@ func TestIsMessageArchived_HitsNewPathFirst(t *testing.T) {
 	if err := os.MkdirAll(newDir, 0o755); err != nil {
 		t.Fatalf("failed to create new dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(newDir, messageFile), []byte("hello\n"+sourceLink+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(newDir, messageFile), []byte("hello\nwithout source link\n"), 0o644); err != nil {
 		t.Fatalf("failed to write new archive file: %v", err)
 	}
 

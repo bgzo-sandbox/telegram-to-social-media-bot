@@ -1,4 +1,15 @@
-
+---
+title: {{.title}}
+aliases:
+  - {{.title}}
+published: {{.published}}
+created: {{.saved}}
+modified: {{.modified}}
+source: {{.source}}
+tags: 
+  - tgchannel/{{.source_channel}}
+---
+# {{.title}}
 
 {{.photo}}
 
