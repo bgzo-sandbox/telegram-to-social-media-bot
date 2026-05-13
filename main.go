@@ -1,46 +1,28 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"html/template"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
-	"telegram-message-sync-bot/internal/Database"
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/internal/Handler"
+	"telegram-message-sync-bot/internal/service/archivemigrationservice"
+	"telegram-message-sync-bot/internal/service/bootstrapservice"
+	"telegram-message-sync-bot/internal/service/pipelineservice"
 	"telegram-message-sync-bot/pkg/FileUtils"
 	"telegram-message-sync-bot/pkg/LogUtils"
-	"telegram-message-sync-bot/pkg/SocialMediaUtils"
-	"telegram-message-sync-bot/pkg/StrUtils"
-	"telegram-message-sync-bot/pkg/TgUtils"
 	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 // 全局配置
 var globalConfig Entity.Config
-
-func initSetting(configFile string) {
-	data, err := os.ReadFile(configFile)
-	if err != nil {
-		fmt.Printf("读取配置文件失败: %v", err)
-	}
-	err = yaml.Unmarshal(data, &globalConfig)
-	if err != nil {
-		fmt.Printf("解析配置失败: %v", err)
-	}
-	fmt.Printf("解析配置成功: 配置内容: %+v\n", globalConfig)
-}
 
 // start 启动 Telegram Bot
 func start(botToken string) {
@@ -82,192 +64,23 @@ func defalutHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		persistJSON(update)
 	}
 
-	ok, msg, sourceLink, msgText, sourceId := persistMessage(ctx, b, update)
-	targetChatIdList := []int64{update.Message.Chat.ID}
-	if len(globalConfig.TargetUserList) > 0 {
-		targetChatIdList = globalConfig.TargetUserList
+	pipeline := pipelineservice.NewDefaultPipeline()
+	pipeline.SetExecutionMode(pipelineservice.ResolveExecutionMode(globalConfig))
+	result := pipeline.ProcessUpdate(ctx, b, update, globalConfig)
+
+	if !result.PersistResult.OK {
+		LogUtils.GetLogger().Println(result.PersistResult.Message)
+	}
+	if !result.SyncEnabled {
+		LogUtils.GetLogger().Println(result.SyncReason)
 	}
 
-	responseTxt := ""
-	if !ok {
-		LogUtils.GetLogger().Println(msg)
-		responseTxt = fmt.Sprintf("%s\n消息备份出现异常: %s!", sourceLink, msg)
-	} else {
-		responseTxt = fmt.Sprintf("%s\n消息已备案至: %s!", sourceLink, msg)
-	}
-
-	for _, chatId := range targetChatIdList {
+	for _, outbound := range result.OutboundMessages {
 		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID: chatId,
-			Text:   responseTxt,
+			ChatID: outbound.ChatID,
+			Text:   outbound.Text,
 		})
-		if sourceId == "imbGZo" {
-			/**
-			 * TODO 提取配置
-				1. 适配每个社交媒体的内容限制，
-				2. 转换成纯文本，不再支持 Markdown
-			*/
-			if SocialMediaUtils.SendBlueSky(globalConfig, msgText) == true {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "消息已同步至 BlueSky!",
-				})
-			} else {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "同步 BlueSky 失败",
-				})
-			}
-
-			if SocialMediaUtils.SendMastodon(globalConfig, msgText) == true {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "消息已同步至 Mastodon!",
-				})
-			} else {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "同步 Mastodon 失败",
-				})
-			}
-
-			if SocialMediaUtils.SendTwitter(globalConfig, msgText) == true {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "消息已同步至 Twitter!",
-				})
-			} else {
-				_, _ = b.SendMessage(ctx, &bot.SendMessageParams{
-					ChatID: chatId,
-					Text:   "同步 Twitter 失败",
-				})
-			}
-		}
-
 	}
-}
-
-func formatDownloadedFiles(files []string) string {
-	var builder strings.Builder
-	for _, file := range files {
-		builder.WriteString("![](")
-		builder.WriteString(file)
-		builder.WriteString(") ")
-	}
-	return builder.String()
-}
-
-func persistMessage(ctx context.Context, b *bot.Bot, update *models.Update) (bool, string, string, string, string) {
-	if update.Message == nil {
-		return false, "接受消息为空", "", "", ""
-	}
-
-	// 默认为私人消息
-	outputPath := globalConfig.Output.PersonDir
-	sourceId := fmt.Sprintf("%d", update.Message.Chat.ID)
-	fileName := fmt.Sprintf("%s.md", sourceId)
-	msgText := selectMsgText(update)
-	sourceLink := ""
-	sourceDate := time.Now()
-	photoLink := ""
-	messageId := update.Message.ID
-	assets := []Entity.Attachment{}
-
-	if update.Message.ForwardOrigin != nil && update.Message.ForwardOrigin.Type == "channel" {
-		// 消息为转发，特殊处理
-		outputPath = globalConfig.Output.ChannelDir
-		origin := update.Message.ForwardOrigin.MessageOriginChannel
-
-		if origin.Chat.Username != "" {
-			sourceId = origin.Chat.Username
-			fileName = fmt.Sprintf("%s.md", sourceId)
-		} else {
-			sourceId = fmt.Sprintf("%d", origin.Chat.ID)
-			fileName = fmt.Sprintf("%s.md", sourceId)
-		}
-
-		sourceLink = fmt.Sprintf("https://t.me/%s/%d",
-			sourceId,
-			origin.MessageID)
-		sourceDate = time.Unix(int64(origin.Date), 0)
-		messageId = origin.MessageID
-
-		if StrUtils.SearchInFile(filepath.Join(outputPath, fileName), sourceLink) {
-			return false, fmt.Sprint("消息已存在"), sourceLink, msgText, sourceId
-		}
-
-		var files []string
-		photos := update.Message.Photo
-		if len(photos) > 0 {
-			highestResolutionPhoto := photos[len(photos)-1]
-			file := persistFile(ctx, b, highestResolutionPhoto.FileID, sourceId, outputPath, Entity.ImageMessage)
-			if file != nil {
-				files = append(files, file.FilePath)
-				assets = append(assets, *file)
-			}
-			photoLink = formatDownloadedFiles(files)
-		}
-	}
-
-	logCommandline := fmt.Sprintf("ChatID: %d, Channel: %s, Message: %s",
-		update.Message.Chat.ID,
-		sourceId,
-		msgText,
-	)
-
-	LogUtils.GetLogger().Println(logCommandline)
-
-	timeFormat := "2006-01-02 15:04:05"
-	data := map[string]interface{}{
-		"title":          sourceDate.Format(timeFormat),
-		"photo":          photoLink,
-		"content":        msgText,
-		"sourceTelegram": sourceLink,
-		"now":            time.Now().Format(timeFormat),
-		"date":           sourceDate.Format(timeFormat),
-	}
-
-	// 读取模板文件
-	tmplData, err := os.ReadFile(globalConfig.Template.Dir)
-	if err != nil {
-		return false, fmt.Sprintf("读取模板失败, %v", err), sourceLink, msgText, sourceId
-	}
-
-	// 创建并解析模板
-	tmpl, err := template.New("example").Parse(string(tmplData))
-	if err != nil {
-		return false, fmt.Sprintf("解析模板失败, %v", err), sourceLink, msgText, sourceId
-	}
-
-	// 使用 bytes.Buffer 捕获渲染结果
-	var buf bytes.Buffer
-	err = tmpl.Execute(&buf, data)
-	if err != nil {
-		return false, fmt.Sprintf("渲染模板失败, %v", err), sourceLink, msgText, sourceId
-	}
-
-	// 输出本次消息
-	FileUtils.OutputString(outputPath, fileName, buf.String())
-	// 记录到数据库
-	savedMsg := Entity.Message{
-		Content: msgText,
-
-		MessageID:   int64(messageId),
-		Username:    sourceId,
-		MessageUrl:  sourceLink,
-		MessageDate: sourceDate,
-		Attachments: assets,
-
-		CreatedTime: time.Now(),
-	}
-	message, err := Database.SaveMessage(&savedMsg)
-	if err != nil {
-		LogUtils.GetLogger().Println(err)
-	} else {
-		LogUtils.GetLogger().Println(fmt.Sprintf("Save successful with: %d", message))
-	}
-
-	return true, fileName, sourceLink, msgText, sourceId
 }
 
 func persistJSON(update *models.Update) (bool, string) {
@@ -292,65 +105,15 @@ func persistJSON(update *models.Update) (bool, string) {
 	return true, "JSON序列化成功"
 }
 
-func persistFile(ctx context.Context, b *bot.Bot, fileID string, dirname string, outputPath string, messageType Entity.MessageType) *Entity.Attachment {
-	// 获取文件信息
-	params := bot.GetFileParams{FileID: fileID}
-	file, err := b.GetFile(ctx, &params)
-	if err != nil {
-		LogUtils.GetLogger().Println("获取文件信息失败: %v", err)
-		return nil
-	}
-
-	// 构造下载 URL
-	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", b.Token(), file.FilePath)
-
-	// 获取文件扩展名
-	ext := filepath.Ext(file.FilePath)
-	if ext == "" {
-		ext = ".dat" // 如果没有扩展名，则存为 .dat
-	}
-
-	// 下载文件
-	resp, err := http.Get(downloadURL)
-	if err != nil {
-		LogUtils.GetLogger().Println("下载文件失败: %v", err)
-		return nil
-	}
-
-	// 使用时间戳生成唯一文件名
-	timestamp := time.Now().Format("20060102_150405") + fmt.Sprintf("_%d", time.Now().UnixNano()%1e6)
-	fileName := fmt.Sprintf("%s%s", timestamp, ext)
-	// 全路径
-	fullOutputDir := filepath.Join(outputPath, "assets", dirname)
-	fullOutputFilename := filepath.Join(fullOutputDir, fileName)
-	// 相对路径
-	relatedPath := filepath.Join("assets", dirname, fileName)
-	// 保存文件
-	FileUtils.OutputResponse(fullOutputDir, fmt.Sprintf("%s%s", timestamp, ext), resp)
-	// 返回
-	size, err := FileUtils.GetFileSize(fullOutputFilename)
-	if err != nil {
-		size = 0
-	}
-	return &Entity.Attachment{
-		FileName: fileName,
-		FilePath: relatedPath,
-		FileSize: size,
-		Type:     messageType,
-	}
-}
-
-func selectMsgText(update *models.Update) string {
-	msgText := update.Message.Text
-	msgEntities := update.Message.Entities
-	if msgText == "" {
-		msgText = update.Message.Caption
-		msgEntities = update.Message.CaptionEntities
-	}
-	return StrUtils.EscapeHashtags(TgUtils.HandleMsgLink(msgText, msgEntities))
-}
-
 func main() {
+	rootCmd := buildRootCommand()
+	err := rootCmd.Execute()
+	if err != nil {
+		return
+	}
+}
+
+func buildRootCommand() *cobra.Command {
 	var configFile string
 
 	var cmdSync = &cobra.Command{
@@ -359,32 +122,115 @@ func main() {
 		Long:  `Sync the message from tg bot.`,
 		Args:  cobra.MinimumNArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			// 初始化配置
-			initSetting(configFile)
-			// 初始化日志
-			LogUtils.InitLogger(globalConfig.Log.Dir)
-			// 初始化数据目录
-			err := Database.InitORMDB(filepath.Join(globalConfig.Log.Dir))
+			loadedConfig, err := bootstrapservice.LoadConfig(configFile)
 			if err != nil {
-				LogUtils.GetLogger().Println(err)
+				fmt.Printf("加载配置失败: %v\n", err)
+				return
 			}
-			// 启动机器人
+
+			globalConfig = loadedConfig
+			fmt.Printf("解析配置成功: 配置内容: %+v\n", globalConfig)
+
+			err = bootstrapservice.InitRuntime(globalConfig)
+			if err != nil {
+				fmt.Printf("初始化运行时失败: %v\n", err)
+				LogUtils.GetLogger().Println(err)
+				return
+			}
+
 			start(globalConfig.Token)
 		},
 	}
 
-	cmdSync.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
-	err := cmdSync.MarkFlagRequired("config")
-	if err != nil {
-		return
+	var cmdMigrate = &cobra.Command{
+		Use:   "migrate",
+		Short: "Run archive migration operations",
+		Long:  `Run archive migration operations.`,
 	}
 
-	var rootCmd = &cobra.Command{Use: "sync"}
-	rootCmd.AddCommand(cmdSync)
-	err = rootCmd.Execute()
-	if err != nil {
-		return
+	var cmdMigrateBackfill = &cobra.Command{
+		Use:   "backfill",
+		Short: "Backfill local archives from database",
+		Long:  `Backfill local archives from database.`,
+		Args:  cobra.MinimumNArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := bootstrapservice.LoadConfig(configFile)
+			if err != nil {
+				fmt.Printf("加载配置失败: %v\n", err)
+				return
+			}
+
+			err = bootstrapservice.InitRuntime(cfg)
+			if err != nil {
+				fmt.Printf("初始化运行时失败: %v\n", err)
+				LogUtils.GetLogger().Println(err)
+				return
+			}
+
+			stats, err := archivemigrationservice.BackfillFromDatabase(cfg)
+			if err != nil {
+				fmt.Printf("DB 全量补齐失败: %v\n", err)
+				return
+			}
+
+			fmt.Printf("DB 全量补齐完成: %+v\n", stats)
+		},
 	}
+
+	var cmdMigrateMoveLegacy = &cobra.Command{
+		Use:   "move-legacy",
+		Short: "Move legacy root markdown files to pending-delete directory",
+		Long:  `Move legacy root markdown files to pending-delete directory.`,
+		Args:  cobra.MinimumNArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := bootstrapservice.LoadConfig(configFile)
+			if err != nil {
+				fmt.Printf("加载配置失败: %v\n", err)
+				return
+			}
+
+			err = bootstrapservice.InitRuntime(cfg)
+			if err != nil {
+				fmt.Printf("初始化运行时失败: %v\n", err)
+				LogUtils.GetLogger().Println(err)
+				return
+			}
+
+			stats, err := archivemigrationservice.BackupAndMoveLegacySingleFiles(cfg)
+			if err != nil {
+				fmt.Printf("旧文件迁移到待删除目录失败: %v\n", err)
+				return
+			}
+
+			fmt.Printf("旧文件迁移到待删除目录完成: %+v\n", stats)
+		},
+	}
+
+	cmdMigrateBackfill.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
+	err := cmdMigrateBackfill.MarkFlagRequired("config")
+	if err != nil {
+		return cmdMigrate
+	}
+	cmdMigrateMoveLegacy.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
+	err = cmdMigrateMoveLegacy.MarkFlagRequired("config")
+	if err != nil {
+		return cmdMigrate
+	}
+
+	cmdMigrate.AddCommand(cmdMigrateBackfill)
+	cmdMigrate.AddCommand(cmdMigrateMoveLegacy)
+
+	cmdSync.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
+	err = cmdSync.MarkFlagRequired("config")
+	if err != nil {
+		return cmdSync
+	}
+
+	var rootCmd = &cobra.Command{Use: "tg"}
+	rootCmd.AddCommand(cmdSync)
+	rootCmd.AddCommand(cmdMigrate)
+
+	return rootCmd
 
 	//message := "Hello world from script!"
 	//fmt.Println(SocialMediaUtils.SendBlueSky(globalConfig, message))

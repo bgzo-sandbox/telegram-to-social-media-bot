@@ -1,0 +1,160 @@
+package pipelineservice
+
+import (
+	"context"
+	"strings"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+
+	"telegram-message-sync-bot/internal/Entity"
+	"telegram-message-sync-bot/internal/service/archiveservice"
+	"telegram-message-sync-bot/internal/service/notifyservice"
+	"telegram-message-sync-bot/internal/service/syncservice"
+)
+
+// ArchiveStage 定义归档阶段可替换接口。
+// 这样做的原因是让归档实现可按需替换（例如异步任务、重试包装器），而不影响主流程编排。
+type ArchiveStage interface {
+	Run(ctx context.Context, b *bot.Bot, update *models.Update, config Entity.Config) archiveservice.PersistResult
+}
+
+// SyncStage 定义同步阶段可替换接口。
+// 这样做的原因是把同步策略判定与分发执行封装为独立阶段，后续可替换为异步实现。
+type SyncStage interface {
+	Run(config Entity.Config, persistResult archiveservice.PersistResult) (bool, string, []syncservice.DispatchResult)
+}
+
+// NotifyStage 定义通知阶段可替换接口。
+// 这样做的原因是把消息展开与通知编排独立出来，便于切换发送策略（串行/异步队列）。
+type NotifyStage interface {
+	Run(config Entity.Config, update *models.Update, persistResult archiveservice.PersistResult, syncEnabled bool, syncReason string, dispatchResults []syncservice.DispatchResult) []notifyservice.OutboundMessage
+}
+
+type ProcessResult struct {
+	PersistResult    archiveservice.PersistResult
+	SyncEnabled      bool
+	SyncReason       string
+	OutboundMessages []notifyservice.OutboundMessage
+}
+
+type ExecutionMode string
+
+const (
+	ExecutionModeSerial            ExecutionMode = "serial"
+	ExecutionModeAsyncExperimental ExecutionMode = "async_experimental"
+)
+
+type Pipeline struct {
+	ArchiveStage ArchiveStage
+	SyncStage    SyncStage
+	NotifyStage  NotifyStage
+	Mode         ExecutionMode
+}
+
+type defaultArchiveStage struct{}
+
+func (defaultArchiveStage) Run(ctx context.Context, b *bot.Bot, update *models.Update, config Entity.Config) archiveservice.PersistResult {
+	return archiveservice.PersistMessage(ctx, b, update, config)
+}
+
+type defaultSyncStage struct{}
+
+func (defaultSyncStage) Run(config Entity.Config, persistResult archiveservice.PersistResult) (bool, string, []syncservice.DispatchResult) {
+	syncEnabled, syncReason := syncservice.ShouldSync(config, persistResult.SourceID)
+	results := make([]syncservice.DispatchResult, 0)
+	if syncEnabled {
+		results = syncservice.Dispatch(config, persistResult.MsgText, syncservice.DefaultSenders())
+	}
+	return syncEnabled, syncReason, results
+}
+
+type defaultNotifyStage struct{}
+
+func (defaultNotifyStage) Run(config Entity.Config, update *models.Update, persistResult archiveservice.PersistResult, syncEnabled bool, syncReason string, dispatchResults []syncservice.DispatchResult) []notifyservice.OutboundMessage {
+	targetChatIDs := notifyservice.ResolveTargetChatIDs(config, update.Message.Chat.ID)
+	archiveResponse := notifyservice.BuildArchiveResponse(persistResult.OK, persistResult.SourceLink, persistResult.Message)
+	syncNotifications := notifyservice.BuildSyncNotifications(syncEnabled, syncReason, dispatchResults)
+	return notifyservice.BuildOutboundMessages(targetChatIDs, archiveResponse, syncNotifications)
+}
+
+// NewDefaultPipeline 构建默认串行 pipeline：archive -> sync -> notify。
+// 这样做的原因是把主流程编排集中到单点，main 只保留入口与发送动作。
+func NewDefaultPipeline() Pipeline {
+	return Pipeline{
+		ArchiveStage: defaultArchiveStage{},
+		SyncStage:    defaultSyncStage{},
+		NotifyStage:  defaultNotifyStage{},
+		Mode:         ExecutionModeSerial,
+	}
+}
+
+// SetExecutionMode 设置 pipeline 执行模式（默认串行，可选异步实验模式）。
+// 这样做的原因是先提供切换骨架，在不改变现有语义前提下为后续异步化演进预留入口。
+func (p *Pipeline) SetExecutionMode(mode ExecutionMode) {
+	p.Mode = mode
+}
+
+// ResolveExecutionMode 从配置中解析 pipeline 执行模式。
+// 这样做的原因是把模式解析规则集中管理，避免入口层散落字符串判断；未知模式统一回退串行。
+func ResolveExecutionMode(config Entity.Config) ExecutionMode {
+	mode := strings.TrimSpace(strings.ToLower(config.Pipeline.ExecutionMode))
+	switch ExecutionMode(mode) {
+	case ExecutionModeAsyncExperimental:
+		return ExecutionModeAsyncExperimental
+	case ExecutionModeSerial:
+		fallthrough
+	default:
+		return ExecutionModeSerial
+	}
+}
+
+// ProcessUpdate 以固定顺序执行串行 stage，并返回统一处理结果。
+// 这样做的原因是稳定阶段边界，为后续异步化改造提供可替换骨架。
+func (p Pipeline) ProcessUpdate(ctx context.Context, b *bot.Bot, update *models.Update, config Entity.Config) ProcessResult {
+	if update == nil || update.Message == nil {
+		return ProcessResult{}
+	}
+
+	if p.Mode == "" {
+		p.Mode = ExecutionModeSerial
+	}
+
+	if p.Mode == ExecutionModeAsyncExperimental {
+		return p.processAsyncExperimental(ctx, b, update, config)
+	}
+
+	return p.processSerial(ctx, b, update, config)
+}
+
+func (p Pipeline) processSerial(ctx context.Context, b *bot.Bot, update *models.Update, config Entity.Config) ProcessResult {
+	persistResult := p.ArchiveStage.Run(ctx, b, update, config)
+	syncEnabled, syncReason, results := p.SyncStage.Run(config, persistResult)
+	outboundMessages := p.NotifyStage.Run(config, update, persistResult, syncEnabled, syncReason, results)
+
+	return ProcessResult{
+		PersistResult:    persistResult,
+		SyncEnabled:      syncEnabled,
+		SyncReason:       syncReason,
+		OutboundMessages: outboundMessages,
+	}
+}
+
+func (p Pipeline) processAsyncExperimental(ctx context.Context, b *bot.Bot, update *models.Update, config Entity.Config) ProcessResult {
+	persistResult := p.ArchiveStage.Run(ctx, b, update, config)
+
+	resultCh := make(chan ProcessResult, 1)
+	go func() {
+		syncEnabled, syncReason, results := p.SyncStage.Run(config, persistResult)
+		outboundMessages := p.NotifyStage.Run(config, update, persistResult, syncEnabled, syncReason, results)
+
+		resultCh <- ProcessResult{
+			PersistResult:    persistResult,
+			SyncEnabled:      syncEnabled,
+			SyncReason:       syncReason,
+			OutboundMessages: outboundMessages,
+		}
+	}()
+
+	return <-resultCh
+}

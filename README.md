@@ -65,6 +65,68 @@ chmod +x ./tg
 ./tg sync -c ./config/config.yaml
 ```
 
+### Pipeline execution mode (optional)
+
+Set in `config/config.yaml`:
+
+```yaml
+pipeline:
+  executionMode: serial # serial | async_experimental
+```
+
+- `serial`: default stable mode
+- `async_experimental`: experimental mode (should keep equivalent behavior currently)
+
+## Archive migration (DB -> local archives)
+
+Use unified CLI commands to rebuild/archive Markdown files from SQLite (`archives/archive.db`) into local archives directories.
+
+### 1) Backfill all messages from DB
+
+```shell
+./tg migrate backfill -c ./config/config.yaml
+```
+
+What it does:
+
+- Reads all messages from DB;
+- Generates/ensures `source_id/message_id.md` in `archives/person` or `archives/channel`;
+- Skips existing files;
+- Verifies key consistency after backfill.
+
+### 2) Move legacy root markdown files to pending-delete directory
+
+The executed shell operation is now persisted in:
+
+- `scripts/migration/move-legacy-to-pending-delete.sh`
+
+Run it:
+
+```shell
+bash ./scripts/migration/move-legacy-to-pending-delete.sh
+```
+
+What it does:
+
+- Scans only legacy root files: `archives/person/*.md` and `archives/channel/*.md`;
+- Creates backup zip first (if missing): `archives/260218-old-markdown-archives.zip`;
+- Moves legacy files to: `archives/260218-legacy-pending-delete`;
+- Does **not** touch new-format files under `source_id/message_id.md` directories.
+
+### 3) Move legacy root markdown files by CLI (optional alternative)
+
+```shell
+./tg migrate move-legacy -c ./config/config.yaml
+```
+
+### 4) Quick verification
+
+```shell
+find ./archives/person -maxdepth 1 -type f -name '*.md' | wc -l
+find ./archives/channel -maxdepth 1 -type f -name '*.md' | wc -l
+find ./archives/260218-legacy-pending-delete -type f -name '*.md' | wc -l
+```
+
 ### Optional: run in background using nohup
 
 ```shell

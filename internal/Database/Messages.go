@@ -1,6 +1,7 @@
 package Database
 
 import (
+	"strings"
 	"telegram-message-sync-bot/internal/Entity"
 )
 
@@ -11,6 +12,25 @@ func SaveMessage(msg *Entity.Message) (int64, error) {
 		return 0, err
 	}
 	return msg.ID, nil
+}
+
+func IsDuplicateMessageError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "UNIQUE constraint failed") || strings.Contains(errMsg, "duplicated key")
+}
+
+// ListMessages 返回全部消息（含附件），用于归档补齐与核对。
+func ListMessages() ([]Entity.Message, error) {
+	var msgs []Entity.Message
+	err := DB.Preload("Attachments").Order("id ASC").Find(&msgs).Error
+	if err != nil {
+		return nil, err
+	}
+	return msgs, nil
 }
 
 // 按ID查找消息（含附件）
