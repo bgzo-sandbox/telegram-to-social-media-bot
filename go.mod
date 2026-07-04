@@ -1,8 +1,6 @@
 module telegram-message-sync-bot
 
-go 1.23.0
-
-toolchain go1.24.0
+go 1.26
 
 require (
 	github.com/go-telegram/bot v1.14.0
@@ -21,7 +19,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-sqlite3 v1.14.30 // indirect
-	github.com/michimani/gotwi v0.18.1 // indirect
+	github.com/michimani/gotwi v0.18.3 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/reiver/go-atproto v0.0.0-20250506180748-6bcb24fc8a6d // indirect
 	github.com/reiver/go-erorr v0.0.0-20240801233437-8cbde6d1fa3f // indirect

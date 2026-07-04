@@ -25,6 +25,8 @@ github.com/mattn/go-sqlite3 v1.14.30 h1:bVreufq3EAIG1Quvws73du3/QgdeZ3myglJlrzSY
 github.com/mattn/go-sqlite3 v1.14.30/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/michimani/gotwi v0.18.1 h1:Tp7uia9qby8I0AXk9oDZRqaCPg31qyQ7NkeyiGDCDaE=
 github.com/michimani/gotwi v0.18.1/go.mod h1:yz1cyV/30Uy/KGQyN8BVfXFPt/63Imzonykny8/SMi0=
+github.com/michimani/gotwi v0.18.3 h1:ii0ZHfjE2Cj43ralo9/9ZY6qQFWgVCIHD6EyaKwn5+k=
+github.com/michimani/gotwi v0.18.3/go.mod h1:JDj84GJikeqyPPjbIybiJIdXkUeevX8ZKYxv6Le2nhY=
 github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4=
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
 github.com/reiver/go-atproto v0.0.0-20250506180748-6bcb24fc8a6d h1:JWqRbVrNjZrO/lJOLussR9W2xVdPfmbgyNh+Ke5+pSM=
