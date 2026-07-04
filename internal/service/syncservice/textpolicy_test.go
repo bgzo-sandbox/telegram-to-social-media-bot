@@ -93,3 +93,45 @@ func TestPreparePlatformText_TwitterSupportsMixedWidthBoundary(t *testing.T) {
 		t.Fatalf("expected exact twitter limit weight, got: %d", twitterWeightedLength(prepared.Text))
 	}
 }
+
+func TestValidateTweetText_TwitterExceedsLimitWithTrailingURL(t *testing.T) {
+	text := `前几年我还羡慕实体游戏的可流通性，因为我受够了 Steam 的区域定价和审查。
+
+直到最近索尼先割席 PC，保持游戏独占，然后宣布停产光盘。车头掉转太猛了，感觉像是新官上任三把火，先把自己家烧了个遍。
+
+如果不再有实体光盘，那么主机跟 Steam 还有什么区别呢？Why not Steam?
+
+https://x.com/unotfbg/status/2072348056113082736`
+
+	err := ValidateTweetText(text)
+	if err == nil {
+		t.Fatalf("expected validation error for text exceeding Twitter limit with trailing URL")
+	}
+}
+
+func TestValidateTweetText_TwitterFitsWithURLShortening(t *testing.T) {
+	text := strings.Repeat("a", 250) + " https://x.com/unotfbg/status/2072348056113082736"
+
+	err := ValidateTweetText(text)
+	if err != nil {
+		t.Fatalf("expected no validation error (text fits with URL shortening): %v", err)
+	}
+}
+
+func TestValidateTweetText_TwitterExceedsLimitWithoutURL(t *testing.T) {
+	text := strings.Repeat("a", 300)
+
+	err := ValidateTweetText(text)
+	if err != nil {
+		t.Fatalf("expected no validation error for text without URL: %v", err)
+	}
+}
+
+func TestValidateTweetText_TwitterWithinLimitWithURL(t *testing.T) {
+	text := "Hello world, check out this link: https://x.com/unotfbg/status/2072348056113082736"
+
+	err := ValidateTweetText(text)
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}

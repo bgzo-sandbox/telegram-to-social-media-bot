@@ -1,6 +1,8 @@
 package syncservice
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/rivo/uniseg"
@@ -9,6 +11,7 @@ import (
 
 const (
 	twitterTextLimit  = 280
+	twitterURLLength  = 25
 	mastodonTextLimit = 500
 	blueSkyTextLimit  = 300
 	truncateSuffix    = "..."
@@ -125,4 +128,62 @@ func twitterGraphemeWeight(grapheme string) int {
 	}
 
 	return 1
+}
+
+var urlRegex = regexp.MustCompile(`https?://[^\s]+`)
+
+func containsURL(text string) bool {
+	return urlRegex.MatchString(text)
+}
+
+func twitterEffectiveLength(text string) int {
+	result := urlRegex.ReplaceAllStringFunc(text, func(match string) string {
+		return strings.Repeat("x", twitterURLLength)
+	})
+	return twitterWeightedLength(result)
+}
+
+func ValidateTweetText(text string) error {
+	normalized := normalizePlatformText(text)
+
+	effectiveLen := twitterEffectiveLength(normalized)
+	if effectiveLen <= twitterTextLimit {
+		return nil
+	}
+
+	bodyLimit := twitterTextLimit - twitterWeightedLength(truncateSuffix)
+	graphemes := splitGraphemes(normalized)
+
+	used := 0
+	truncateGraphemeIdx := len(graphemes)
+	for i, g := range graphemes {
+		w := twitterGraphemeWeight(g)
+		if used+w > bodyLimit {
+			truncateGraphemeIdx = i
+			break
+		}
+		used += w
+	}
+
+	if truncateGraphemeIdx >= len(graphemes) {
+		return nil
+	}
+
+	truncateBytePos := 0
+	for i := 0; i < truncateGraphemeIdx; i++ {
+		truncateBytePos += len(graphemes[i])
+	}
+
+	locs := urlRegex.FindAllStringIndex(normalized, -1)
+	for _, loc := range locs {
+		urlStart, urlEnd := loc[0], loc[1]
+		if urlStart >= truncateBytePos || (urlStart < truncateBytePos && urlEnd > truncateBytePos) {
+			return fmt.Errorf(
+				"text exceeds Twitter limit (%d effective chars) and truncation would break a URL",
+				effectiveLen,
+			)
+		}
+	}
+
+	return nil
 }
