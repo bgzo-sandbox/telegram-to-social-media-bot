@@ -443,7 +443,7 @@ func persistFile(ctx context.Context, b *bot.Bot, fileID string, fileUniqueID st
 func buildPersistedAttachmentFileName(fileUniqueID string, remotePath string) string {
 	name := sanitizeRenderedArchiveFileName(fileUniqueID)
 	if containsLetterOrNumber(name) {
-		return name
+		return ensureFileExtension(name, remotePath)
 	}
 
 	// failure fallback to timestamp-based name if unique ID is not usable as filename
@@ -454,6 +454,19 @@ func buildPersistedAttachmentFileName(fileUniqueID string, remotePath string) st
 
 	timestamp := time.Now().Format("20060102_150405") + fmt.Sprintf("_%d", time.Now().UnixNano()%1e6)
 	return fmt.Sprintf("%s%s", timestamp, ext)
+}
+
+// ensureFileExtension 为无扩展名的文件名补齐远程文件扩展名。
+// 这样做的原因是避免丢失后缀导致 R2 对象无法按 MIME 类型被浏览器直接打开。
+func ensureFileExtension(name string, remotePath string) string {
+	if filepath.Ext(name) != "" {
+		return name
+	}
+	ext := filepath.Ext(remotePath)
+	if ext == "" {
+		return name
+	}
+	return name + ext
 }
 
 func containsLetterOrNumber(value string) bool {

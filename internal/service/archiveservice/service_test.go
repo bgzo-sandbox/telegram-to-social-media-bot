@@ -328,8 +328,22 @@ func TestIsMessageArchived_ReturnsFalseWhenNotFound(t *testing.T) {
 
 func TestBuildPersistedAttachmentFileName_UsesFileUniqueID(t *testing.T) {
 	got := buildPersistedAttachmentFileName("AQADyxBrG0vZEVd-", "photos/image.jpg")
+	if got != "AQADyxBrG0vZEVd-.jpg" {
+		t.Fatalf("expected file_unique_id with remote extension, got: %s", got)
+	}
+}
+
+func TestBuildPersistedAttachmentFileName_KeepsExistingExtension(t *testing.T) {
+	got := buildPersistedAttachmentFileName("AQADyxBrG0vZEVd-.png", "photos/image.jpg")
+	if got != "AQADyxBrG0vZEVd-.png" {
+		t.Fatalf("expected existing extension to be kept, got: %s", got)
+	}
+}
+
+func TestBuildPersistedAttachmentFileName_NoRemoteExtension(t *testing.T) {
+	got := buildPersistedAttachmentFileName("AQADyxBrG0vZEVd-", "photos/image")
 	if got != "AQADyxBrG0vZEVd-" {
-		t.Fatalf("expected file_unique_id to be used as file name, got: %s", got)
+		t.Fatalf("expected name unchanged when remote path has no extension, got: %s", got)
 	}
 }
 

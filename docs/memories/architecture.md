@@ -110,6 +110,7 @@ tags:
 - `Attachment.S3Url` 是新列，Markdown 导出优先使用 R2 URL，回落本地路径。
 - 历史附件通过 `tg migrate attachments-to-r2` 迁移。
 - 本地图片文件始终保留，不做删除。
+- 附件文件名保留原始扩展名（file_unique_id + 远程扩展名），R2 object key 不带扩展名的历史对象需修复后重传。
 
 ### JSON 补录流
 

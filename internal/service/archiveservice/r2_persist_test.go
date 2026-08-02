@@ -150,8 +150,8 @@ func TestPersistMessage_R2Enabled_FillsS3URL(t *testing.T) {
 		t.Fatalf("R2 开启时 Markdown 不应使用本地路径:\n%s", content)
 	}
 
-	if result.ImagePath != "assets/12345/UNIQ1" {
-		t.Fatalf("ImagePath 应保持本地相对路径, got %q", result.ImagePath)
+	if result.ImagePath != "assets/12345/UNIQ1.jpg" {
+		t.Fatalf("ImagePath 应保持本地相对路径(含扩展名), got %q", result.ImagePath)
 	}
 
 	msg, err := Database.GetMessageBySource(99, "12345")
