@@ -66,14 +66,6 @@ func (twitterSender) Name() string {
 }
 
 func (twitterSender) Send(config Entity.Config, payload Payload) DispatchResult {
-	if err := ValidateTweetText(payload.Text); err != nil {
-		return DispatchResult{
-			Platform:     "Twitter",
-			Success:      false,
-			ErrorMessage: fmt.Sprintf("twitter validation failed: %v", err),
-		}
-	}
-
 	prepared := PreparePlatformText("Twitter", payload.Text)
 	if payload.Image != nil && payload.Image.FilePath != "" {
 		imageResult := sendTwitterImageDetailed(config, prepared.Text, payload.Image.FilePath)

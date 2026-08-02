@@ -50,8 +50,34 @@ func PreparePlatformText(platform string, text string) PreparedText {
 	}
 }
 
+type urlSegment struct {
+	text  string
+	isURL bool
+}
+
+func splitURLSegments(text string) []urlSegment {
+	locs := urlRegex.FindAllStringIndex(text, -1)
+	if len(locs) == 0 {
+		return []urlSegment{{text: text}}
+	}
+
+	segs := make([]urlSegment, 0, len(locs)*2+1)
+	pos := 0
+	for _, loc := range locs {
+		if loc[0] > pos {
+			segs = append(segs, urlSegment{text: text[pos:loc[0]]})
+		}
+		segs = append(segs, urlSegment{text: text[loc[0]:loc[1]], isURL: true})
+		pos = loc[1]
+	}
+	if pos < len(text) {
+		segs = append(segs, urlSegment{text: text[pos:]})
+	}
+	return segs
+}
+
 func prepareTwitterText(text string) PreparedText {
-	if twitterWeightedLength(text) <= twitterTextLimit {
+	if twitterEffectiveLength(text) <= twitterTextLimit {
 		return PreparedText{Text: text}
 	}
 
@@ -60,23 +86,77 @@ func prepareTwitterText(text string) PreparedText {
 		bodyLimit = 0
 	}
 
-	graphemes := splitGraphemes(text)
-	var builder strings.Builder
-	used := 0
-	for _, grapheme := range graphemes {
-		weight := twitterGraphemeWeight(grapheme)
-		if used+weight > bodyLimit {
-			break
-		}
-		builder.WriteString(grapheme)
-		used += weight
-	}
-	builder.WriteString(truncateSuffix)
+	segs := splitURLSegments(text)
 
-	return PreparedText{
-		Text:      builder.String(),
-		Truncated: true,
+	totalWeight := 0
+	for _, s := range segs {
+		if s.isURL {
+			totalWeight += twitterURLLength
+		} else {
+			totalWeight += twitterWeightedLength(s.text)
+		}
 	}
+	if totalWeight <= bodyLimit {
+		return PreparedText{Text: text}
+	}
+
+	excess := totalWeight - bodyLimit
+	addedSuffix := false
+
+	for i := len(segs) - 1; i >= 0 && excess > 0; i-- {
+		if segs[i].isURL {
+			continue
+		}
+
+		graphemes := splitGraphemes(segs[i].text)
+		if len(graphemes) == 0 {
+			continue
+		}
+
+		weights := make([]int, len(graphemes))
+		segWeight := 0
+		for j, g := range graphemes {
+			w := twitterGraphemeWeight(g)
+			weights[j] = w
+			segWeight += w
+		}
+
+		remove := excess
+		if remove > segWeight {
+			remove = segWeight
+		}
+
+		removed := 0
+		keepIdx := len(graphemes)
+		for j := len(graphemes) - 1; j >= 0; j-- {
+			if removed+weights[j] >= remove {
+				removed += weights[j]
+				keepIdx = j
+				break
+			}
+			removed += weights[j]
+			keepIdx = j
+		}
+
+		if keepIdx <= 0 {
+			segs[i].text = ""
+		} else {
+			segs[i].text = strings.Join(graphemes[:keepIdx], "")
+			if !addedSuffix {
+				segs[i].text += truncateSuffix
+				addedSuffix = true
+			}
+		}
+
+		excess -= removed
+	}
+
+	var b strings.Builder
+	for _, s := range segs {
+		b.WriteString(s.text)
+	}
+
+	return PreparedText{Text: b.String(), Truncated: true}
 }
 
 func normalizePlatformText(text string) string {
