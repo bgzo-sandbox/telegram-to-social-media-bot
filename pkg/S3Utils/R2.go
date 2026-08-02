@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"telegram-message-sync-bot/internal/Entity"
@@ -63,15 +66,26 @@ func (u *R2Uploader) Upload(ctx context.Context, localPath string, key string) (
 	}
 
 	_, err = u.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-		Body:   bytes.NewReader(data),
+		Bucket:      aws.String(u.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String(resolveContentType(localPath, data)),
 	})
 	if err != nil {
 		return "", sanitizeS3Error(err)
 	}
 
 	return BuildPublicURL(u.publicAddress, key), nil
+}
+
+// resolveContentType 按文件扩展名推断 MIME 类型，未知扩展名回退为按文件头探测。
+// 这样做的原因是让浏览器能按 Content-Type 直接内联预览图片，而不是当作
+// application/octet-stream 触发下载。
+func resolveContentType(localPath string, data []byte) string {
+	if ct := mime.TypeByExtension(filepath.Ext(localPath)); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }
 
 // BuildPublicURL 拼接公开访问 URL：<public_address>/<key>，并对首尾斜杠做归一化。

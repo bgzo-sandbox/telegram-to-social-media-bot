@@ -61,6 +61,7 @@ func TestNewR2Uploader_MissingBucket(t *testing.T) {
 
 func TestR2Uploader_Upload_Success(t *testing.T) {
 	var capturedBody []byte
+	var capturedContentType string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			t.Fatalf("期望 PUT 请求, got %s", r.Method)
@@ -69,6 +70,7 @@ func TestR2Uploader_Upload_Success(t *testing.T) {
 			t.Fatalf("请求路径应包含 bucket: %s", r.URL.Path)
 		}
 		capturedBody, _ = io.ReadAll(r.Body)
+		capturedContentType = r.Header.Get("Content-Type")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -98,6 +100,42 @@ func TestR2Uploader_Upload_Success(t *testing.T) {
 	}
 	if string(capturedBody) != "image-bytes" {
 		t.Fatalf("上传体不匹配: got %q", string(capturedBody))
+	}
+	if capturedContentType != "image/jpeg" {
+		t.Fatalf("Content-Type 应按扩展名推断为 image/jpeg, got %q", capturedContentType)
+	}
+}
+
+func TestR2Uploader_Upload_UnknownExt_FallsBackToSniffing(t *testing.T) {
+	var capturedContentType string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedContentType = r.Header.Get("Content-Type")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	uploader := &R2Uploader{
+		client: s3.New(s3.Options{
+			Region:       "auto",
+			Credentials:  credentials.NewStaticCredentialsProvider("AKID123456", "SECRET456789", ""),
+			BaseEndpoint: aws.String(server.URL),
+			UsePathStyle: true,
+		}),
+		bucket:        "test-bucket",
+		publicAddress: "https://media.example.com",
+	}
+
+	localPath := filepath.Join(t.TempDir(), "photo") // 无扩展名
+	// 0xFF 0xD8 0xFF 为 JPEG 魔数头
+	if err := os.WriteFile(localPath, []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := uploader.Upload(context.Background(), localPath, "assets/k/photo"); err != nil {
+		t.Fatalf("Upload 不应返回错误: %v", err)
+	}
+	if capturedContentType != "image/jpeg" {
+		t.Fatalf("无扩展名时应按文件头探测为 image/jpeg, got %q", capturedContentType)
 	}
 }
 
