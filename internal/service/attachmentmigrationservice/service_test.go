@@ -124,7 +124,7 @@ func TestBackfillAttachmentsToR2_HappyPath(t *testing.T) {
 	if stats.Uploaded != 1 || stats.Total != 1 || stats.MarkdownRewritten != 1 || stats.Failed != 0 || stats.Skipped != 0 {
 		t.Fatalf("统计不符合预期: %+v", stats)
 	}
-	if len(env.fake.keys) != 1 || env.fake.keys[0] != "tg-archive/imbGZo/1/single.jpg" {
+	if len(env.fake.keys) != 1 || env.fake.keys[0] != "tg-archive/imbGZo/single.jpg" {
 		t.Fatalf("上传 key 不匹配: %v", env.fake.keys)
 	}
 
@@ -132,7 +132,7 @@ func TestBackfillAttachmentsToR2_HappyPath(t *testing.T) {
 	if err := Database.DB.Preload("Attachments").First(&reloaded, msg.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	wantURL := "https://media.example.com/tg-archive/imbGZo/1/single.jpg"
+	wantURL := "https://media.example.com/tg-archive/imbGZo/single.jpg"
 	if reloaded.Attachments[0].S3Url != wantURL {
 		t.Fatalf("S3Url 未回填: got %q want %q", reloaded.Attachments[0].S3Url, wantURL)
 	}
@@ -142,7 +142,7 @@ func TestBackfillAttachmentsToR2_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取重写后的 Markdown 失败: %v", err)
 	}
-	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/imbGZo/1/single.jpg)") {
+	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/imbGZo/single.jpg)") {
 		t.Fatalf("Markdown 未使用 R2 URL:\n%s", content)
 	}
 }
@@ -227,7 +227,7 @@ func TestBackfillAttachmentsToR2_Disabled(t *testing.T) {
 func TestRewriteMarkdownForMessage_ChannelPath(t *testing.T) {
 	env := setupMigrationTest(t)
 	msg := channelImageMessage()
-	msg.Attachments[0].S3Url = "https://media.example.com/tg-archive/imbGZo/1/single.jpg"
+	msg.Attachments[0].S3Url = "https://media.example.com/tg-archive/imbGZo/single.jpg"
 
 	if err := rewriteMarkdownForMessage(env.cfg, *msg); err != nil {
 		t.Fatalf("重写 Markdown 失败: %v", err)
@@ -238,7 +238,7 @@ func TestRewriteMarkdownForMessage_ChannelPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("channel 路径未生成归档文件: %v", err)
 	}
-	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/imbGZo/1/single.jpg)") {
+	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/imbGZo/single.jpg)") {
 		t.Fatalf("Markdown 未包含 S3Url:\n%s", content)
 	}
 }
@@ -254,7 +254,7 @@ func TestRewriteMarkdownForMessage_PersonPath(t *testing.T) {
 				FileName: "p.jpg",
 				FilePath: "assets/12345/p.jpg",
 				Type:     Entity.ImageMessage,
-				S3Url:    "https://media.example.com/tg-archive/12345/2/p.jpg",
+				S3Url:    "https://media.example.com/tg-archive/12345/p.jpg",
 			},
 		},
 	}
@@ -268,7 +268,7 @@ func TestRewriteMarkdownForMessage_PersonPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("person 路径未生成归档文件: %v", err)
 	}
-	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/12345/2/p.jpg)") {
+	if !strings.Contains(string(content), "![](https://media.example.com/tg-archive/12345/p.jpg)") {
 		t.Fatalf("Markdown 未包含 S3Url:\n%s", content)
 	}
 }

@@ -120,7 +120,7 @@ func TestPersistMessage_R2Enabled_FillsS3URL(t *testing.T) {
 	cfg.R2.Enable = true
 	cfg.R2.Path = "tg-archive"
 
-	fakeURL := "https://media.example.com/tg-archive/12345/99/UNIQ1"
+	fakeURL := "https://media.example.com/tg-archive/12345/UNIQ1"
 	oldFactory := uploadAttachmentFactory
 	uploadAttachmentFactory = func(_ context.Context, _ Entity.Config, meta SourceMeta, file *Entity.Attachment) (string, error) {
 		if meta.SourceID != "12345" || meta.MessageID != 99 {

@@ -100,7 +100,7 @@ func TestUploadAttachmentToR2_Success(t *testing.T) {
 	meta := SourceMeta{SourceID: "imbGZo", MessageID: 42}
 	file := &Entity.Attachment{FileName: "photo.jpg", FilePath: "assets/imbGZo/photo.jpg", Type: Entity.ImageMessage}
 
-	fake := &fakeS3Uploader{url: "https://media.example.com/tg-archive/imbGZo/42/photo.jpg"}
+	fake := &fakeS3Uploader{url: "https://media.example.com/tg-archive/imbGZo/photo.jpg"}
 	oldFactory := r2UploaderFactory
 	defer func() { r2UploaderFactory = oldFactory }()
 	r2UploaderFactory = func(cfg Entity.Config) (S3Uploader, error) {
@@ -114,7 +114,7 @@ func TestUploadAttachmentToR2_Success(t *testing.T) {
 	if url != fake.url {
 		t.Fatalf("返回 URL 与 fake 不一致: got %q want %q", url, fake.url)
 	}
-	if fake.key != "tg-archive/imbGZo/42/photo.jpg" {
+	if fake.key != "tg-archive/imbGZo/photo.jpg" {
 		t.Fatalf("object key 不匹配: got %q", fake.key)
 	}
 }

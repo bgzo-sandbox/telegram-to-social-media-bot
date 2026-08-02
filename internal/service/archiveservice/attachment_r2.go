@@ -36,7 +36,7 @@ func uploadAttachmentToR2(ctx context.Context, cfg Entity.Config, meta SourceMet
 		return "", err
 	}
 
-	key := S3Utils.BuildR2ObjectKey(cfg.R2.Path, meta.SourceID, int64(meta.MessageID), file.FileName)
+	key := S3Utils.BuildR2ObjectKey(cfg.R2.Path, meta.SourceID, file.FileName)
 
 	uploader, err := r2UploaderFactory(cfg)
 	if err != nil {

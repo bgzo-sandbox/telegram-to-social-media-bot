@@ -61,7 +61,7 @@ func BackfillAttachmentsToR2(ctx context.Context, cfg Entity.Config) (BackfillSt
 				continue
 			}
 
-			key := S3Utils.BuildR2ObjectKey(cfg.R2.Path, msg.Username, msg.MessageID, attachment.FileName)
+			key := S3Utils.BuildR2ObjectKey(cfg.R2.Path, msg.Username, attachment.FileName)
 			url, err := uploader.Upload(ctx, localPath, key)
 			if err != nil {
 				stats.Failed++
