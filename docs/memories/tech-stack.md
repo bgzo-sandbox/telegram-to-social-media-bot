@@ -30,6 +30,12 @@ tags:
 - Twitter：支持纯文字和单张图片。
 - 当前统一策略是：优先图文发送，失败时降级为纯文字。
 
+## R2 / S3 适配
+
+- `pkg/S3Utils`：Cloudflare R2（S3 兼容）上传能力，aws-sdk-go-v2 + 静态凭证，path-style 寻址。
+- `internal/service/attachmentmigrationservice`：历史图片附件批量上传回填 S3Url 并重写 Markdown。
+- `Attachment.S3Url` 非空时 Markdown 导出优先使用 R2 公开 URL，否则回落本地路径。
+
 ## 配置入口
 
 - 唯一配置文件是 `config/config.yaml`。
@@ -49,6 +55,7 @@ tags:
 - `socialMediaSync.enable`：同步总开关。
 - `socialMediaSync.targetChannel`：允许同步的频道名单。
 - `socialMediaSync.mastodon.*`、`twitter.*`、`bluesky.*`：平台配置。
+- `r2.*`：Cloudflare R2 上传配置（`enable`、`server_address`、`bucket`、`access_key_id`、`secret_access_key`、`path`、`public_address`）。
 - `notification.*`：历史遗留，视为废弃。
 
 ## 工程规则

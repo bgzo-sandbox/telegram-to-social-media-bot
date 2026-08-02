@@ -20,3 +20,12 @@ targetUserList:
 
 # 允许交互的用户；为空时允许所有人，配置后仅这些用户可收到机器人回复
 authorizedUserList:
+
+r2:
+    enable: false # 默认关闭；开启后图片附件上传到 Cloudflare R2
+    server_address: replace-me # S3 API endpoint，形如 https://<accountid>.r2.cloudflarestorage.com
+    bucket: replace-me
+    access_key_id: replace-me
+    secret_access_key: replace-me
+    path: "" # 上传 key 前缀，可为空，如 tg-archive
+    public_address: replace-me # bucket 公开访问端点，形如 https://media.example.com

@@ -104,6 +104,13 @@ tags:
 - 执行后结果立即追加写入同步记录，并回显到 Telegram 管理页。
 - 最终回归口径当前以 `go test ./...` 为准，核心管理链路已纳入自动测试覆盖。
 
+### R2 附件上传流
+
+- R2 上传在 archive 阶段独立执行，不影响 sync 与 notify。
+- `Attachment.S3Url` 是新列，Markdown 导出优先使用 R2 URL，回落本地路径。
+- 历史附件通过 `tg migrate attachments-to-r2` 迁移。
+- 本地图片文件始终保留，不做删除。
+
 ### JSON 补录流
 
 - `tg migrate json-to-db -c ./config/config.yaml` 负责离线历史补录。

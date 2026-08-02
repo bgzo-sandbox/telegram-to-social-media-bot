@@ -34,4 +34,5 @@ type Attachment struct {
 	FilePath  string
 	FileSize  int64
 	Type      MessageType
+	S3Url     string `gorm:"column:s3_url" json:"s3_url,omitempty"`
 }

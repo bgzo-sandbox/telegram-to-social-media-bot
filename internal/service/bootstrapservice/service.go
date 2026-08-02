@@ -34,5 +34,8 @@ func InitRuntime(config Entity.Config) error {
 	if err := Database.InitORMDB(filepath.Join(config.Log.Dir)); err != nil {
 		return fmt.Errorf("初始化数据库失败: %w", err)
 	}
+	if err := validateR2Config(config); err != nil {
+		return err
+	}
 	return nil
 }

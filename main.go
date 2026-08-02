@@ -11,6 +11,7 @@ import (
 	"telegram-message-sync-bot/internal/Entity"
 	"telegram-message-sync-bot/internal/Handler"
 	"telegram-message-sync-bot/internal/service/archivemigrationservice"
+	"telegram-message-sync-bot/internal/service/attachmentmigrationservice"
 	"telegram-message-sync-bot/internal/service/bootstrapservice"
 	"telegram-message-sync-bot/internal/service/jsonbackfillservice"
 	"telegram-message-sync-bot/internal/service/pipelineservice"
@@ -424,6 +425,35 @@ func buildRootCommand() *cobra.Command {
 		},
 	}
 
+	var cmdMigrateAttachmentsToR2 = &cobra.Command{
+		Use:   "attachments-to-r2",
+		Short: "Upload image attachments to Cloudflare R2 and rewrite Markdown",
+		Long:  `Upload image attachments to Cloudflare R2 and rewrite Markdown.`,
+		Args:  cobra.MinimumNArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := bootstrapservice.LoadConfig(configFile)
+			if err != nil {
+				fmt.Printf("加载配置失败: %v\n", err)
+				return
+			}
+
+			err = bootstrapservice.InitRuntime(cfg)
+			if err != nil {
+				fmt.Printf("初始化运行时失败: %v\n", err)
+				LogUtils.GetLogger().Println(err)
+				return
+			}
+
+			stats, err := attachmentmigrationservice.BackfillAttachmentsToR2(context.Background(), cfg)
+			if err != nil {
+				fmt.Printf("附件迁移失败: %v\n", err)
+				return
+			}
+
+			fmt.Printf("附件迁移完成: %+v\n", stats)
+		},
+	}
+
 	cmdMigrateBackfill.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
 	err := cmdMigrateBackfill.MarkFlagRequired("config")
 	if err != nil {
@@ -431,6 +461,11 @@ func buildRootCommand() *cobra.Command {
 	}
 	cmdMigrateJSONToDB.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
 	err = cmdMigrateJSONToDB.MarkFlagRequired("config")
+	if err != nil {
+		return cmdMigrate
+	}
+	cmdMigrateAttachmentsToR2.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")
+	err = cmdMigrateAttachmentsToR2.MarkFlagRequired("config")
 	if err != nil {
 		return cmdMigrate
 	}
@@ -442,6 +477,7 @@ func buildRootCommand() *cobra.Command {
 
 	cmdMigrate.AddCommand(cmdMigrateBackfill)
 	cmdMigrate.AddCommand(cmdMigrateJSONToDB)
+	cmdMigrate.AddCommand(cmdMigrateAttachmentsToR2)
 	cmdMigrate.AddCommand(cmdMigrateMoveLegacy)
 
 	cmdSync.Flags().StringVarP(&configFile, "config", "c", "./config/config.yaml", "config for bot.")

@@ -179,11 +179,12 @@ func renderAttachmentMarkdown(assets []Entity.Attachment) string {
 
 	var b strings.Builder
 	for _, a := range assets {
-		if a.FilePath == "" {
+		preferred := archiveservice.PreferredAttachmentURL(a)
+		if preferred == "" {
 			continue
 		}
 		b.WriteString("![](")
-		b.WriteString(a.FilePath)
+		b.WriteString(preferred)
 		b.WriteString(") ")
 	}
 	return b.String()

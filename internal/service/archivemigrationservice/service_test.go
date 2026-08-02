@@ -376,3 +376,53 @@ func readZipEntries(t *testing.T, zipPath string) map[string]struct{} {
 	}
 	return entries
 }
+
+func TestRenderAttachmentMarkdown_PrefersS3URL(t *testing.T) {
+	assets := []Entity.Attachment{
+		{
+			FileName: "single.jpg",
+			FilePath: "assets/imbGZo/single.jpg",
+			Type:     Entity.ImageMessage,
+			S3Url:    "https://media.example.com/imbGZo/1/single.jpg",
+		},
+	}
+
+	got := renderAttachmentMarkdown(assets)
+	want := "![](https://media.example.com/imbGZo/1/single.jpg) "
+	if got != want {
+		t.Fatalf("存在 S3Url 时 Markdown 应使用 S3 URL:\ngot  %q\nwant %q", got, want)
+	}
+}
+
+func TestRenderAttachmentMarkdown_FallbackToLocal(t *testing.T) {
+	assets := []Entity.Attachment{
+		{
+			FileName: "single.jpg",
+			FilePath: "assets/imbGZo/single.jpg",
+			Type:     Entity.ImageMessage,
+			S3Url:    "",
+		},
+	}
+
+	got := renderAttachmentMarkdown(assets)
+	want := "![](assets/imbGZo/single.jpg) "
+	if got != want {
+		t.Fatalf("S3Url 为空时 Markdown 应使用本地路径:\ngot  %q\nwant %q", got, want)
+	}
+}
+
+func TestRenderAttachmentMarkdown_SkipsWhenPreferredURLEmpty(t *testing.T) {
+	assets := []Entity.Attachment{
+		{
+			FileName: "single.jpg",
+			FilePath: "",
+			S3Url:    "  ",
+			Type:     Entity.ImageMessage,
+		},
+	}
+
+	got := renderAttachmentMarkdown(assets)
+	if got != "" {
+		t.Fatalf("首选 URL 为空时应跳过该附件, got %q", got)
+	}
+}

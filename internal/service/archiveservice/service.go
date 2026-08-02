@@ -33,6 +33,11 @@ type PersistResult struct {
 	ArchivedMessageID int64
 }
 
+// downloadFile 下载 Telegram 文件内容；测试可替换为 fake 以离线运行。
+var downloadFile = func(url string) (*http.Response, error) {
+	return http.Get(url)
+}
+
 type SourceMeta struct {
 	OutputPath  string
 	ArchiveRoot string
@@ -67,7 +72,15 @@ func PersistMessage(ctx context.Context, b *bot.Bot, update *models.Update, conf
 		highestResolutionPhoto := photos[len(photos)-1]
 		file := persistFile(ctx, b, highestResolutionPhoto.FileID, highestResolutionPhoto.FileUniqueID, meta.SourceID, meta.ArchiveRoot, Entity.ImageMessage)
 		if file != nil {
-			files = append(files, file.FilePath)
+			if config.R2.Enable && file.Type == Entity.ImageMessage {
+				url, err := uploadAttachmentFactory(ctx, config, meta, file)
+				if err != nil {
+					LogUtils.GetLogger().Printf("r2 upload failed: %v\n", err)
+				} else {
+					file.S3Url = url
+				}
+			}
+			files = append(files, PreferredAttachmentURL(*file))
 			assets = append(assets, *file)
 			imagePath = file.FilePath
 		}
@@ -401,7 +414,7 @@ func persistFile(ctx context.Context, b *bot.Bot, fileID string, fileUniqueID st
 
 	downloadURL := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", b.Token(), file.FilePath)
 
-	resp, err := http.Get(downloadURL)
+	resp, err := downloadFile(downloadURL)
 	if err != nil {
 		LogUtils.GetLogger().Printf("下载文件失败: %v\n", err)
 		return nil

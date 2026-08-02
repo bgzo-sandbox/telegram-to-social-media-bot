@@ -29,6 +29,16 @@ type Config struct {
 		ExecutionMode string `yaml:"executionMode"`
 	} `yaml:"pipeline"`
 
+	R2 struct {
+		Enable           bool   `yaml:"enable"`
+		ServerAddress    string `yaml:"server_address"`
+		Bucket           string `yaml:"bucket"`
+		AccessKeyID      string `yaml:"access_key_id"`
+		SecretAccessKey  string `yaml:"secret_access_key"`
+		Path             string `yaml:"path"`
+		PublicAddress    string `yaml:"public_address"`
+	} `yaml:"r2"`
+
 	SocialMediaSync struct {
 		Enable        bool     `yaml:"enable"`
 		TargetChannel []string `yaml:"targetChannel"`
